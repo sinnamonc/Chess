@@ -1,0 +1,64 @@
+.meter {
+  border-radius: 8px;
+  padding: 10px 16px;
+  text-align: center;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.equal {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.slightWhite {
+  background: rgba(15, 118, 110, 0.15);
+  color: #5eead4;
+}
+
+.slightBlack {
+  background: rgba(217, 119, 6, 0.15);
+  color: #fbbf24;
+}
+
+.clearWhite {
+  background: rgba(15, 118, 110, 0.25);
+  color: #2dd4bf;
+}
+
+.clearBlack {
+  background: rgba(217, 119, 6, 0.25);
+  color: #f59e0b;
+}
+
+.winningWhite {
+  background: rgba(15, 118, 110, 0.35);
+  color: #14b8a6;
+}
+
+.winningBlack {
+  background: rgba(217, 119, 6, 0.35);
+  color: #d97706;
+}
+
+.unclear {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+.compWhite {
+  background: rgba(15, 118, 110, 0.1);
+  color: #5eead4;
+  font-style: italic;
+}
+
+.compBlack {
+  background: rgba(217, 119, 6, 0.1);
+  color: #fbbf24;
+  font-style: italic;
+}

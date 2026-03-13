@@ -1,0 +1,12 @@
+.boardContainer {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .boardContainer {
+    width: 100%;
+  }
+}
