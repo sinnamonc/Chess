@@ -18,11 +18,23 @@ function uciToSan(fen: string, uci: string): string {
   }
 }
 
-/** Convert raw engine eval to our EngineEvaluation type */
+/** Determine side to move from a FEN string */
+function sideToMove(fen: string): 'w' | 'b' {
+  const parts = fen.split(' ');
+  return (parts[1] === 'b' ? 'b' : 'w');
+}
+
+/**
+ * Convert raw engine eval to our EngineEvaluation type.
+ * Normalizes the score to always be from WHITE's perspective.
+ * Stockfish reports from the side-to-move's perspective, so we
+ * negate when it's black to move.
+ */
 function toEngineEvaluation(raw: EngineEval, fen: string): EngineEvaluation {
+  const flip = sideToMove(fen) === 'b';
   return {
-    cp: raw.cp,
-    mate: raw.mate,
+    cp: raw.cp !== null ? (flip ? -raw.cp : raw.cp) : null,
+    mate: raw.mate !== null ? (flip ? -raw.mate : raw.mate) : null,
     bestMoveSan: uciToSan(fen, raw.bestMove),
     bestMoveUci: raw.bestMove,
     depth: raw.depth,
@@ -103,21 +115,17 @@ export async function enrichWithStockfish(
     move.engineEvalBefore = prevEval;
     move.engineEval = evaluation;
 
-    // Calculate CP loss
-    // The "before" eval tells us what the best move would score.
-    // The "after" eval tells us what the played move actually scored.
-    // We need to compare from the moving side's perspective.
+    // Calculate CP loss (all evals are normalized to white's perspective).
+    // "Before" = best the moving side could achieve. "After" = what they got.
+    // For white: a good move keeps the score high → cpLoss = before - after
+    // For black: a good move lowers the score → cpLoss = after - before
     const scoreBefore = evalToScore(prevEval);
     const scoreAfter = evalToScore(evaluation);
 
     let cpLoss: number;
     if (move.color === 'w') {
-      // White moved. Before: white's best = scoreBefore. After: scoreAfter.
-      // If white played the best move, scoreAfter should be close to scoreBefore.
-      // cpLoss = how much the position got worse for the side that moved.
       cpLoss = scoreBefore - scoreAfter;
     } else {
-      // Black moved. A lower score (more negative) is better for black.
       cpLoss = scoreAfter - scoreBefore;
     }
 
