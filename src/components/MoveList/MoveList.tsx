@@ -21,10 +21,20 @@ const TAG_COLORS: Partial<Record<MoveTag, string>> = {
 
 export default function MoveList({ moves, currentIndex, onMoveClick }: MoveListProps) {
   const activeRef = useRef<HTMLSpanElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (activeRef.current) {
-      activeRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (activeRef.current && listRef.current) {
+      const container = listRef.current;
+      const el = activeRef.current;
+      const elTop = el.offsetTop - container.offsetTop;
+      const elBottom = elTop + el.offsetHeight;
+
+      if (elTop < container.scrollTop) {
+        container.scrollTop = elTop;
+      } else if (elBottom > container.scrollTop + container.clientHeight) {
+        container.scrollTop = elBottom - container.clientHeight;
+      }
     }
   }, [currentIndex]);
 
@@ -80,7 +90,7 @@ export default function MoveList({ moves, currentIndex, onMoveClick }: MoveListP
   return (
     <div className={styles.container}>
       <h3 className={styles.heading}>Moves</h3>
-      <div className={styles.moveList}>
+      <div className={styles.moveList} ref={listRef}>
         {rows.map((row, i) => (
           <div key={i} className={styles.row}>
             <span className={styles.moveNumber}>{row.number}.</span>

@@ -69,7 +69,11 @@
   }
 
   .leftColumn {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #1a1a2e;
+    padding-bottom: 4px;
   }
 }
 
@@ -94,7 +98,11 @@
   }
 
   .leftColumn {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #1a1a2e;
+    padding-bottom: 2px;
     gap: 6px;
   }
 
