@@ -1,8 +1,10 @@
 import { Chess } from 'chess.js';
 import type { AnalyzedMove, EngineEvaluation, EngineLine, MoveQuality } from '../types';
-import { getStockfishService, type MultiPVResult } from './stockfishService';
+import { getStockfishPool } from './stockfishPool';
+import type { MultiPVResult } from './stockfishService';
 
-const SEARCH_DEPTH = 16;
+const QUICK_DEPTH = 10;
+const FULL_DEPTH = 16;
 const NUM_LINES = 3;
 
 /** Convert a sequence of UCI moves to SAN, playing them on the board */
@@ -24,15 +26,11 @@ function uciSequenceToSan(fen: string, uciMoves: string[]): string[] {
   return sanMoves;
 }
 
-/** Determine side to move from a FEN string */
 function sideToMove(fen: string): 'w' | 'b' {
-  const parts = fen.split(' ');
-  return (parts[1] === 'b' ? 'b' : 'w');
+  return fen.split(' ')[1] === 'b' ? 'b' : 'w';
 }
 
-/**
- * Convert raw MultiPV results to EngineLine[], normalizing scores to white's perspective.
- */
+/** Normalize MultiPV results to white's perspective */
 function toEngineLines(results: MultiPVResult[], fen: string): EngineLine[] {
   const flip = sideToMove(fen) === 'b';
   return results.map((r) => ({
@@ -45,10 +43,6 @@ function toEngineLines(results: MultiPVResult[], fen: string): EngineLine[] {
   }));
 }
 
-/**
- * Convert raw engine eval to our EngineEvaluation type.
- * Normalizes the score to always be from WHITE's perspective.
- */
 function toEngineEvaluation(lines: EngineLine[]): EngineEvaluation {
   const best = lines[0];
   if (!best) {
@@ -63,9 +57,6 @@ function toEngineEvaluation(lines: EngineLine[]): EngineEvaluation {
   };
 }
 
-/**
- * Convert an eval to a single numeric score for comparison.
- */
 function evalToScore(ev: EngineEvaluation): number {
   if (ev.mate !== null) {
     return ev.mate > 0 ? 10000 - ev.mate : -10000 - ev.mate;
@@ -73,9 +64,6 @@ function evalToScore(ev: EngineEvaluation): number {
   return ev.cp ?? 0;
 }
 
-/**
- * Classify move quality based on the centipawn loss.
- */
 function classifyMoveQuality(cpLoss: number, isBestMove: boolean, move: AnalyzedMove): MoveQuality {
   if (isBestMove && move.tags.includes('sacrifice')) {
     return 'brilliant';
@@ -87,89 +75,145 @@ function classifyMoveQuality(cpLoss: number, isBestMove: boolean, move: Analyzed
   return 'blunder';
 }
 
-export interface AnalysisProgress {
-  current: number;
-  total: number;
-  phase: 'heuristic' | 'engine';
-}
-
-/**
- * Run Stockfish MultiPV analysis on all moves and enrich AnalyzedMove[] with engine data.
- */
-export async function enrichWithStockfish(
-  moves: AnalyzedMove[],
-  startingFen: string,
-  onProgress?: (progress: AnalysisProgress) => void,
-): Promise<void> {
-  const sf = getStockfishService();
-  await sf.init();
-
-  const total = moves.length + 1;
-  let current = 0;
-
-  // Evaluate starting position
-  onProgress?.({ current: 0, total, phase: 'engine' });
-  const startResults = await sf.evaluateMultiPV(startingFen, SEARCH_DEPTH, NUM_LINES);
-  const startLines = toEngineLines(startResults, startingFen);
-  const startEvaluation = toEngineEvaluation(startLines);
-  current++;
-  onProgress?.({ current, total, phase: 'engine' });
-
-  let prevEval = startEvaluation;
-  let prevLines = startLines;
-
-  for (let i = 0; i < moves.length; i++) {
-    const move = moves[i];
-
-    // The engine lines for this move come from the position BEFORE the move
-    // (what the engine thinks should be considered in the position the player faced)
-    move.engineLines = prevLines;
-
-    // Evaluate position after this move
-    const results = await sf.evaluateMultiPV(move.fen, SEARCH_DEPTH, NUM_LINES);
-    const lines = toEngineLines(results, move.fen);
-    const evaluation = toEngineEvaluation(lines);
-
-    move.engineEvalBefore = prevEval;
-    move.engineEval = evaluation;
-
-    // Calculate CP loss
-    const scoreBefore = evalToScore(prevEval);
-    const scoreAfter = evalToScore(evaluation);
-
-    let cpLoss: number;
-    if (move.color === 'w') {
-      cpLoss = scoreBefore - scoreAfter;
-    } else {
-      cpLoss = scoreAfter - scoreBefore;
-    }
-    cpLoss = Math.max(0, cpLoss);
-
-    const isBestMove = prevEval.bestMoveUci === uciToUci(move);
-    move.moveQuality = classifyMoveQuality(cpLoss, isBestMove, move);
-    move.cpLoss = cpLoss;
-
-    prevEval = evaluation;
-    prevLines = lines;
-    current++;
-    onProgress?.({ current, total, phase: 'engine' });
-  }
-
-  // Reset MultiPV to 1 so subsequent single evaluations aren't affected
-  // (not strictly necessary with our singleton, but good hygiene)
-}
-
-/**
- * Get the UCI representation of a move from an AnalyzedMove.
- */
 function uciToUci(move: AnalyzedMove): string {
   try {
     const chess = new Chess(move.fenBefore);
     const result = chess.move(move.san);
     if (!result) return '';
-    const promo = result.promotion ? result.promotion : '';
-    return result.from + result.to + promo;
+    return result.from + result.to + (result.promotion || '');
   } catch {
     return '';
   }
+}
+
+export interface MoveEvalResult {
+  engineLines: EngineLine[];
+  engineEval: EngineEvaluation;
+  engineEvalBefore: EngineEvaluation;
+  moveQuality: MoveQuality;
+  cpLoss: number;
+  depth: number;
+}
+
+/**
+ * Evaluate a single move on demand. Returns engine lines + eval + move quality.
+ * Uses the worker pool for parallelism and caching.
+ *
+ * @param move - The move to evaluate
+ * @param depth - Search depth
+ * @param priority - Lower = higher priority (0 for current, 10 for prefetch)
+ */
+export async function evaluateMove(
+  move: AnalyzedMove,
+  depth: number = FULL_DEPTH,
+  priority: number = 0,
+): Promise<MoveEvalResult> {
+  const pool = getStockfishPool();
+
+  // Two evaluations in parallel:
+  // 1. Position BEFORE move — MultiPV (for engine lines showing candidates)
+  // 2. Position AFTER move — Single PV (just need eval for the bar / cp loss)
+  const [beforeResults, afterResults] = await Promise.all([
+    pool.evaluate(move.fenBefore, depth, NUM_LINES, priority),
+    pool.evaluate(move.fen, depth, 1, priority),
+  ]);
+
+  const engineLines = toEngineLines(beforeResults, move.fenBefore);
+  const evalBefore = toEngineEvaluation(engineLines);
+  const afterLines = toEngineLines(afterResults, move.fen);
+  const evalAfter = toEngineEvaluation(afterLines);
+
+  // CP loss calculation
+  const scoreBefore = evalToScore(evalBefore);
+  const scoreAfter = evalToScore(evalAfter);
+  let cpLoss = move.color === 'w'
+    ? scoreBefore - scoreAfter
+    : scoreAfter - scoreBefore;
+  cpLoss = Math.max(0, cpLoss);
+
+  const isBestMove = evalBefore.bestMoveUci === uciToUci(move);
+  const moveQuality = classifyMoveQuality(cpLoss, isBestMove, move);
+
+  return {
+    engineLines,
+    engineEval: evalAfter,
+    engineEvalBefore: evalBefore,
+    moveQuality,
+    cpLoss,
+    depth,
+  };
+}
+
+/**
+ * Evaluate a move with progressive deepening:
+ * 1. Quick pass at depth 10 → call onQuick immediately
+ * 2. Full pass at depth 16 → call onFull when done
+ *
+ * Returns an abort function to cancel the full-depth pass.
+ */
+export function evaluateMoveProgressive(
+  move: AnalyzedMove,
+  onQuick: (result: MoveEvalResult) => void,
+  onFull: (result: MoveEvalResult) => void,
+  priority: number = 0,
+): () => void {
+  let aborted = false;
+
+  (async () => {
+    try {
+      // Check if we already have full-depth cached
+      const pool = getStockfishPool();
+      const cachedBefore = pool.getCached(move.fenBefore, FULL_DEPTH, NUM_LINES);
+      const cachedAfter = pool.getCached(move.fen, FULL_DEPTH, 1);
+
+      if (cachedBefore && cachedAfter) {
+        // Already have full-depth results — skip quick pass
+        const result = await evaluateMove(move, FULL_DEPTH, priority);
+        if (!aborted) onFull(result);
+        return;
+      }
+
+      // Quick pass
+      const quickResult = await evaluateMove(move, QUICK_DEPTH, priority);
+      if (aborted) return;
+      onQuick(quickResult);
+
+      // Full pass
+      const fullResult = await evaluateMove(move, FULL_DEPTH, priority + 1);
+      if (aborted) return;
+      onFull(fullResult);
+    } catch {
+      // Swallow errors from aborted/cleared queue
+    }
+  })();
+
+  return () => { aborted = true; };
+}
+
+/**
+ * Prefetch evaluations for nearby moves (non-blocking, low priority).
+ */
+export function prefetchMoves(moves: AnalyzedMove[], centerIndex: number): void {
+  const pool = getStockfishPool();
+  const indicesToPrefetch = [centerIndex + 1, centerIndex + 2, centerIndex - 1];
+
+  for (const idx of indicesToPrefetch) {
+    if (idx < 0 || idx >= moves.length) continue;
+    const m = moves[idx];
+
+    // Only prefetch if not already cached at full depth
+    if (!pool.getCached(m.fenBefore, FULL_DEPTH, NUM_LINES)) {
+      pool.evaluate(m.fenBefore, FULL_DEPTH, NUM_LINES, 10).catch(() => {});
+    }
+    if (!pool.getCached(m.fen, FULL_DEPTH, 1)) {
+      pool.evaluate(m.fen, FULL_DEPTH, 1, 10).catch(() => {});
+    }
+  }
+}
+
+// Re-export for backwards compat with progress type
+export interface AnalysisProgress {
+  current: number;
+  total: number;
+  phase: 'heuristic' | 'engine';
 }

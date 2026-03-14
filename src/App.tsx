@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { AnalyzedGame, AnalyzedMove } from './types';
 import { parsePgn } from './utils/pgnParser';
 import { analyzeGame } from './engine/analyzer';
-import { enrichWithStockfish, type AnalysisProgress } from './engine/stockfishAnalyzer';
+import { evaluateMoveProgressive, prefetchMoves } from './engine/stockfishAnalyzer';
+import { getStockfishPool } from './engine/stockfishPool';
 import Board from './components/Board/Board';
 import PgnInput from './components/PgnInput/PgnInput';
 import PositionMeter from './components/PositionMeter/PositionMeter';
@@ -15,14 +16,14 @@ function App() {
   const [moveIndex, setMoveIndex] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [engineProgress, setEngineProgress] = useState<AnalysisProgress | null>(null);
+  const [engineDepth, setEngineDepth] = useState<number | null>(null);
+  const abortRef = useRef<(() => void) | null>(null);
 
   const handlePgnSubmit = useCallback((pgn: string) => {
     setError(null);
     setIsLoading(true);
-    setEngineProgress(null);
 
-    setTimeout(async () => {
+    setTimeout(() => {
       try {
         const parsed = parsePgn(pgn);
 
@@ -32,35 +33,19 @@ function App() {
           return;
         }
 
+        // Clear pool state from any previous game
+        getStockfishPool().clearQueue();
+        getStockfishPool().clearCache();
+
         const analyzedMoves = analyzeGame(parsed);
-        const analyzedGame: AnalyzedGame = {
+        setGame({
           headers: parsed.headers,
           moves: analyzedMoves,
           startingFen: parsed.startingFen,
-        };
-
-        setGame(analyzedGame);
+        });
         setMoveIndex(-1);
+        setEngineDepth(null);
         setIsLoading(false);
-
-        // Stockfish enrichment in background
-        setEngineProgress({ current: 0, total: analyzedMoves.length + 1, phase: 'engine' });
-
-        try {
-          await enrichWithStockfish(analyzedMoves, parsed.startingFen, (progress) => {
-            setEngineProgress({ ...progress });
-          });
-
-          setGame({
-            headers: parsed.headers,
-            moves: [...analyzedMoves],
-            startingFen: parsed.startingFen,
-          });
-        } catch (engineErr) {
-          console.warn('Stockfish analysis failed:', engineErr);
-        }
-
-        setEngineProgress(null);
       } catch (err) {
         setError(
           err instanceof Error
@@ -68,10 +53,66 @@ function App() {
             : 'Failed to parse PGN. Please check the format.'
         );
         setIsLoading(false);
-        setEngineProgress(null);
       }
     }, 50);
   }, []);
+
+  // Lazy evaluation: when moveIndex changes, evaluate that position on demand
+  useEffect(() => {
+    if (!game || moveIndex < 0) {
+      setEngineDepth(null);
+      return;
+    }
+
+    const move = game.moves[moveIndex];
+    if (!move) return;
+
+    // If already fully evaluated, skip
+    if (move.engineLines && move.engineEval && (move.cpLoss !== undefined) && (move.engineLines[0]?.depth ?? 0) >= 16) {
+      setEngineDepth(move.engineLines[0]?.depth ?? null);
+      // Still prefetch neighbors
+      prefetchMoves(game.moves, moveIndex);
+      return;
+    }
+
+    // Abort any previous in-flight evaluation
+    abortRef.current?.();
+    setEngineDepth(null);
+
+    const abort = evaluateMoveProgressive(
+      move,
+      // Quick callback (depth 10)
+      (result) => {
+        move.engineLines = result.engineLines;
+        move.engineEval = result.engineEval;
+        move.engineEvalBefore = result.engineEvalBefore;
+        move.moveQuality = result.moveQuality;
+        move.cpLoss = result.cpLoss;
+        setEngineDepth(result.depth);
+        // Trigger re-render
+        setGame((g) => g ? { ...g, moves: [...g.moves] } : g);
+      },
+      // Full callback (depth 16)
+      (result) => {
+        move.engineLines = result.engineLines;
+        move.engineEval = result.engineEval;
+        move.engineEvalBefore = result.engineEvalBefore;
+        move.moveQuality = result.moveQuality;
+        move.cpLoss = result.cpLoss;
+        setEngineDepth(result.depth);
+        setGame((g) => g ? { ...g, moves: [...g.moves] } : g);
+
+        // Prefetch neighbors after current position is done
+        prefetchMoves(game.moves, moveIndex);
+      },
+    );
+
+    abortRef.current = abort;
+
+    return () => {
+      abort();
+    };
+  }, [game, moveIndex]);
 
   const handleFirst = useCallback(() => setMoveIndex(-1), []);
   const handlePrev = useCallback(
@@ -89,10 +130,13 @@ function App() {
   );
 
   const handleNewGame = useCallback(() => {
+    abortRef.current?.();
+    getStockfishPool().clearQueue();
+    getStockfishPool().clearCache();
     setGame(null);
     setMoveIndex(-1);
     setError(null);
-    setEngineProgress(null);
+    setEngineDepth(null);
   }, []);
 
   if (!game) {
@@ -104,31 +148,18 @@ function App() {
   const currentMove: AnalyzedMove | null =
     moveIndex >= 0 ? game.moves[moveIndex] : null;
   const currentFen = currentMove ? currentMove.fen : game.startingFen;
-
-  // For engine lines, use the position BEFORE the current move (what the player faced)
   const engineLinesFen = currentMove ? currentMove.fenBefore : game.startingFen;
 
-  // Build the current move label
   const moveLabel = currentMove
     ? `${currentMove.moveNumber}.${currentMove.color === 'b' ? '..' : ''} ${currentMove.san}`
     : 'Starting position';
 
-  // Move quality badge
   const qualitySymbol: Record<string, string> = {
-    brilliant: '!!',
-    great: '!',
-    good: '',
-    inaccuracy: '?!',
-    mistake: '?',
-    blunder: '??',
+    brilliant: '!!', great: '!', good: '', inaccuracy: '?!', mistake: '?', blunder: '??',
   };
   const qualityClass: Record<string, string> = {
-    brilliant: 'qualBrilliant',
-    great: 'qualGreat',
-    good: 'qualGood',
-    inaccuracy: 'qualInaccuracy',
-    mistake: 'qualMistake',
-    blunder: 'qualBlunder',
+    brilliant: 'qualBrilliant', great: 'qualGreat', good: 'qualGood',
+    inaccuracy: 'qualInaccuracy', mistake: 'qualMistake', blunder: 'qualBlunder',
   };
 
   return (
@@ -141,9 +172,14 @@ function App() {
           </span>
         </div>
         <div className="headerRight">
-          {engineProgress && (
+          {currentMove && engineDepth !== null && engineDepth < 16 && (
             <span className="engineStatus">
-              Analyzing {engineProgress.current}/{engineProgress.total}
+              Depth {engineDepth}...
+            </span>
+          )}
+          {currentMove && engineDepth !== null && engineDepth >= 16 && (
+            <span className="engineReady">
+              Depth {engineDepth}
             </span>
           )}
           <button className="newGameBtn" onClick={handleNewGame}>
