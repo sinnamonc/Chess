@@ -63,6 +63,60 @@
   font-style: italic;
 }
 
+/* Eval bar styles */
+.evalContainer {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1e293b;
+}
+
+.evalBar {
+  display: flex;
+  height: 22px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.whiteBar {
+  background: #e8e8e8;
+  transition: width 0.4s ease;
+  height: 100%;
+}
+
+.blackBar {
+  background: #2d2d2d;
+  transition: width 0.4s ease;
+  height: 100%;
+}
+
+.evalInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.evalScore {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  min-width: 48px;
+}
+
+.evalWhite {
+  color: #e8e8e8;
+}
+
+.evalBlack {
+  color: #94a3b8;
+}
+
+.feelLabel {
+  font-size: 12px;
+  color: #64748b;
+  margin-left: auto;
+}
+
 @media (max-width: 600px) {
   .meter {
     padding: 6px 12px;
@@ -71,5 +125,22 @@
 
   .label {
     font-size: 12px;
+  }
+
+  .evalBar {
+    height: 16px;
+  }
+
+  .evalInfo {
+    padding: 4px 10px;
+  }
+
+  .evalScore {
+    font-size: 13px;
+    min-width: 40px;
+  }
+
+  .feelLabel {
+    font-size: 11px;
   }
 }

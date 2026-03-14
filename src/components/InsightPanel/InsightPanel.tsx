@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AnalyzedMove, InsightCategory } from '../../types';
+import type { AnalyzedMove, InsightCategory, MoveQuality } from '../../types';
 import styles from './InsightPanel.module.css';
 
 interface InsightPanelProps {
@@ -25,6 +25,15 @@ const CATEGORY_ICONS: Record<InsightCategory, string> = {
   piece_activity: '\u265E', // knight
   center: '\u25A3', // square
   threats: '\u26A0', // warning
+};
+
+const QUALITY_CONFIG: Record<MoveQuality, { label: string; className: string; symbol: string }> = {
+  brilliant:   { label: 'Brilliant',   className: 'qualityBrilliant',   symbol: '!!' },
+  great:       { label: 'Great move',  className: 'qualityGreat',       symbol: '!' },
+  good:        { label: 'Good move',   className: 'qualityGood',        symbol: '' },
+  inaccuracy:  { label: 'Inaccuracy',  className: 'qualityInaccuracy',  symbol: '?!' },
+  mistake:     { label: 'Mistake',     className: 'qualityMistake',     symbol: '?' },
+  blunder:     { label: 'Blunder',     className: 'qualityBlunder',     symbol: '??' },
 };
 
 export default function InsightPanel({ move, moveIndex, totalMoves, gameInfo }: InsightPanelProps) {
@@ -58,6 +67,7 @@ export default function InsightPanel({ move, moveIndex, totalMoves, gameInfo }: 
   }
 
   const side = move.color === 'w' ? 'White' : 'Black';
+  const qualityInfo = move.moveQuality ? QUALITY_CONFIG[move.moveQuality] : null;
 
   return (
     <div className={styles.container}>
@@ -68,12 +78,36 @@ export default function InsightPanel({ move, moveIndex, totalMoves, gameInfo }: 
           </span>
           <span className={styles.moveSan}>
             {side}: {move.san}
+            {qualityInfo?.symbol && (
+              <span className={`${styles.qualitySymbol} ${styles[qualityInfo.className]}`}>
+                {qualityInfo.symbol}
+              </span>
+            )}
           </span>
           <span className={styles.moveCount}>
             {moveIndex + 1} / {totalMoves}
           </span>
         </div>
+
+        {/* Move quality badge */}
+        {qualityInfo && (
+          <div className={`${styles.qualityBadge} ${styles[qualityInfo.className]}`}>
+            {qualityInfo.label}
+            {move.cpLoss !== undefined && move.cpLoss > 0 && (
+              <span className={styles.cpLoss}>
+                {' '}&minus;{(move.cpLoss / 100).toFixed(1)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Best move hint — show when the played move wasn't the best */}
+      {move.engineEvalBefore && move.moveQuality && move.moveQuality !== 'great' && move.moveQuality !== 'brilliant' && move.moveQuality !== 'good' && (
+        <div className={styles.bestMove}>
+          Best was <strong>{move.engineEvalBefore.bestMoveSan}</strong>
+        </div>
+      )}
 
       {/* Narrative — the star feature */}
       <div className={styles.narrative}>

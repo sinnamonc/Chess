@@ -52,6 +52,29 @@ export interface PositionInsight {
   detail?: string;
 }
 
+// Move quality classification based on engine eval difference
+export type MoveQuality =
+  | 'brilliant'   // Found a move much better than expected (sacrifice that's best)
+  | 'great'       // Best move or very close (within 10cp)
+  | 'good'        // Decent move (within 30cp of best)
+  | 'inaccuracy'  // Small mistake (30-80cp loss)
+  | 'mistake'     // Significant error (80-200cp loss)
+  | 'blunder';    // Major error (200+cp loss)
+
+// Engine evaluation for a position
+export interface EngineEvaluation {
+  /** Centipawns from white's perspective. null when mate. */
+  cp: number | null;
+  /** Mate in N (positive = white mates). null if not a mate position. */
+  mate: number | null;
+  /** Best move in SAN notation (e.g. "Nf3") */
+  bestMoveSan: string;
+  /** Best move in UCI notation (e.g. "g1f3") */
+  bestMoveUci: string;
+  /** Search depth */
+  depth: number;
+}
+
 // A fully analyzed move
 export interface AnalyzedMove {
   moveNumber: number;
@@ -65,6 +88,14 @@ export interface AnalyzedMove {
   positionFeel: PositionFeel;
   tags: MoveTag[];
   insights: PositionInsight[];
+  /** Engine evaluation of the position AFTER this move (from white's perspective) */
+  engineEval?: EngineEvaluation;
+  /** Engine evaluation of the position BEFORE this move */
+  engineEvalBefore?: EngineEvaluation;
+  /** Move quality classification based on engine analysis */
+  moveQuality?: MoveQuality;
+  /** Centipawn loss from the best move */
+  cpLoss?: number;
 }
 
 // Parsed game headers

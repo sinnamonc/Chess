@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import type { AnalyzedMove, MoveTag } from '../../types';
+import type { AnalyzedMove, MoveTag, MoveQuality } from '../../types';
 import styles from './MoveList.module.css';
 
 interface MoveListProps {
@@ -17,6 +17,14 @@ const TAG_COLORS: Partial<Record<MoveTag, string>> = {
   developing: '#22c55e',
   promotion: '#a855f7',
   'pawn break': '#06b6d4',
+};
+
+const QUALITY_DOTS: Partial<Record<MoveQuality, { color: string; symbol: string }>> = {
+  brilliant:  { color: '#c084fc', symbol: '!!' },
+  great:      { color: '#4ade80', symbol: '!' },
+  inaccuracy: { color: '#facc15', symbol: '?!' },
+  mistake:    { color: '#fb923c', symbol: '?' },
+  blunder:    { color: '#f87171', symbol: '??' },
 };
 
 export default function MoveList({ moves, currentIndex, onMoveClick }: MoveListProps) {
@@ -67,6 +75,7 @@ export default function MoveList({ moves, currentIndex, onMoveClick }: MoveListP
 
     const { move, index } = entry;
     const tag = getVisibleTag(move.tags);
+    const qualityDot = move.moveQuality ? QUALITY_DOTS[move.moveQuality] : null;
 
     return (
       <span
@@ -74,6 +83,11 @@ export default function MoveList({ moves, currentIndex, onMoveClick }: MoveListP
         className={`${styles.move} ${isActive ? styles.active : ''}`}
         onClick={() => onMoveClick(index)}
       >
+        {qualityDot && (
+          <span className={styles.qualityDot} style={{ color: qualityDot.color }}>
+            {qualityDot.symbol}
+          </span>
+        )}
         <span className={styles.san}>{move.san}</span>
         {tag && (
           <span

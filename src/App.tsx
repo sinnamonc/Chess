@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import type { AnalyzedGame, AnalyzedMove } from './types';
 import { parsePgn } from './utils/pgnParser';
 import { analyzeGame } from './engine/analyzer';
+import { enrichWithStockfish, type AnalysisProgress } from './engine/stockfishAnalyzer';
 import Board from './components/Board/Board';
 import MoveList from './components/MoveList/MoveList';
 import InsightPanel from './components/InsightPanel/InsightPanel';
@@ -15,13 +16,15 @@ function App() {
   const [moveIndex, setMoveIndex] = useState(-1); // -1 = starting position
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [engineProgress, setEngineProgress] = useState<AnalysisProgress | null>(null);
 
   const handlePgnSubmit = useCallback((pgn: string) => {
     setError(null);
     setIsLoading(true);
+    setEngineProgress(null);
 
     // Use setTimeout to allow UI to update with loading state
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
         const parsed = parsePgn(pgn);
 
@@ -31,15 +34,37 @@ function App() {
           return;
         }
 
+        // Phase 1: Fast heuristic analysis — show results immediately
         const analyzedMoves = analyzeGame(parsed);
-
-        setGame({
+        const analyzedGame: AnalyzedGame = {
           headers: parsed.headers,
           moves: analyzedMoves,
           startingFen: parsed.startingFen,
-        });
+        };
+
+        setGame(analyzedGame);
         setMoveIndex(-1);
         setIsLoading(false);
+
+        // Phase 2: Stockfish engine analysis — enrich in background
+        setEngineProgress({ current: 0, total: analyzedMoves.length + 1, phase: 'engine' });
+
+        try {
+          await enrichWithStockfish(analyzedMoves, parsed.startingFen, (progress) => {
+            setEngineProgress({ ...progress });
+          });
+
+          // Force re-render with enriched data
+          setGame({
+            headers: parsed.headers,
+            moves: [...analyzedMoves],
+            startingFen: parsed.startingFen,
+          });
+        } catch (engineErr) {
+          console.warn('Stockfish analysis failed, continuing with heuristic analysis:', engineErr);
+        }
+
+        setEngineProgress(null);
       } catch (err) {
         setError(
           err instanceof Error
@@ -47,6 +72,7 @@ function App() {
             : 'Failed to parse PGN. Please check the format.'
         );
         setIsLoading(false);
+        setEngineProgress(null);
       }
     }, 50);
   }, []);
@@ -71,6 +97,7 @@ function App() {
     setGame(null);
     setMoveIndex(-1);
     setError(null);
+    setEngineProgress(null);
   }, []);
 
   // If no game loaded, show input screen
@@ -88,9 +115,16 @@ function App() {
     <div className="app">
       <header className="appHeader">
         <h1 className="appTitle">Chess Insight</h1>
-        <button className="newGameBtn" onClick={handleNewGame}>
-          New Game
-        </button>
+        <div className="headerRight">
+          {engineProgress && (
+            <span className="engineStatus">
+              Analyzing {engineProgress.current}/{engineProgress.total}
+            </span>
+          )}
+          <button className="newGameBtn" onClick={handleNewGame}>
+            New Game
+          </button>
+        </div>
       </header>
 
       <main className="appMain">
@@ -100,7 +134,10 @@ function App() {
             arrows={currentMove?.arrows || []}
             highlights={currentMove?.highlights || []}
           />
-          <PositionMeter feel={currentMove?.positionFeel || null} />
+          <PositionMeter
+            feel={currentMove?.positionFeel || null}
+            engineEval={currentMove?.engineEval || null}
+          />
           <NavigationBar
             currentIndex={moveIndex}
             totalMoves={game.moves.length}

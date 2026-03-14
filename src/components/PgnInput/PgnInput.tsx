@@ -30,8 +30,8 @@ export default function PgnInput({ onSubmit, error, isLoading }: PgnInputProps) 
         <div className={styles.header}>
           <h1 className={styles.title}>Chess Insight</h1>
           <p className={styles.subtitle}>
-            Paste a PGN to get human-readable analysis of any chess game.
-            No engine scores — just clear explanations, visual ideas, and position insights.
+            Paste a PGN to get Stockfish-powered analysis of any chess game.
+            Engine evaluations, move quality ratings, and clear positional insights.
           </p>
         </div>
 
