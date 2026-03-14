@@ -54,3 +54,21 @@
   font-size: 11px;
   color: #475569;
 }
+
+@media (max-width: 600px) {
+  .container {
+    padding: 8px;
+    gap: 4px;
+  }
+
+  .navBtn {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+    border-radius: 6px;
+  }
+
+  .shortcuts {
+    display: none;
+  }
+}

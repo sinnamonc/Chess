@@ -62,3 +62,14 @@
   color: #fbbf24;
   font-style: italic;
 }
+
+@media (max-width: 600px) {
+  .meter {
+    padding: 6px 12px;
+    border-radius: 6px;
+  }
+
+  .label {
+    font-size: 12px;
+  }
+}

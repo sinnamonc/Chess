@@ -102,3 +102,33 @@
   font-size: 13px;
   color: #475569;
 }
+
+@media (max-width: 600px) {
+  .container {
+    padding: 12px;
+  }
+
+  .card {
+    padding: 20px 16px;
+    border-radius: 12px;
+    gap: 16px;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+  }
+
+  .textarea {
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .button {
+    padding: 12px;
+    font-size: 15px;
+  }
+}

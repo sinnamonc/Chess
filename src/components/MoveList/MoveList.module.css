@@ -76,3 +76,38 @@
 .emptyMove {
   display: block;
 }
+
+@media (max-width: 600px) {
+  .container {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .heading {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+  }
+
+  .moveList {
+    max-height: 200px;
+  }
+
+  .row {
+    grid-template-columns: 28px 1fr 1fr;
+  }
+
+  .moveNumber {
+    font-size: 11px;
+  }
+
+  .move {
+    padding: 3px 6px;
+    font-size: 13px;
+    gap: 4px;
+  }
+
+  .tag {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+}
