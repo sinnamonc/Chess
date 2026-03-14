@@ -86,7 +86,7 @@ function determinePositionFeel(
 /**
  * Determine move tags
  */
-function determineTags(move: ParsedMove, fenBefore: string, fenAfter: string): MoveTag[] {
+function determineTags(move: ParsedMove, fenBefore: string, fenAfter: string, prevMove?: ParsedMove): MoveTag[] {
   const tags: MoveTag[] = [];
 
   if (move.isCheckmate) tags.push('checkmate');
@@ -95,14 +95,16 @@ function determineTags(move: ParsedMove, fenBefore: string, fenAfter: string): M
   if (move.isCastling) tags.push('castles');
   if (move.isPromotion) tags.push('promotion');
 
+  // Detect recapture: previous move captured on the same square we're capturing on
+  const isRecapture = !!(move.captured && prevMove?.captured && move.to === prevMove.to);
+
   if (move.captured) {
     tags.push('capture');
-    // Check if it's a recapture (previous move was also a capture to the same square)
-    // We'd need move history for this, so skip for now
+    if (isRecapture) tags.push('recapture');
   }
 
-  // Check for sacrifice
-  if (move.captured && isSacrifice(fenBefore, fenAfter, move.piece, move.captured)) {
+  // Check for sacrifice — but never on recaptures (recapturing is not a sacrifice)
+  if (move.captured && !isRecapture && isSacrifice(fenBefore, fenAfter, move.piece, move.captured)) {
     tags.push('sacrifice');
   }
 
@@ -191,7 +193,8 @@ export function analyzeGame(game: ParsedGame): AnalyzedMove[] {
     const move = game.moves[i];
     const analysisBefore = analyzePosition(move.fenBefore);
     const analysisAfter = analyzePosition(move.fen);
-    const tags = determineTags(move, move.fenBefore, move.fen);
+    const prevMove = i > 0 ? game.moves[i - 1] : undefined;
+    const tags = determineTags(move, move.fenBefore, move.fen, prevMove);
 
     const narrative = generateNarrative({
       san: move.san,

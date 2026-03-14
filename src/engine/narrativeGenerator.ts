@@ -31,6 +31,11 @@ export function generateNarrative(ctx: MoveContext): string {
     return generateSacrificeNarrative(side, piece, ctx);
   }
 
+  // Recapture — handle before generic captures
+  if (ctx.tags.includes('recapture')) {
+    return generateRecaptureNarrative(side, piece, ctx);
+  }
+
   // Capture
   if (ctx.isCapture) {
     return generateCaptureNarrative(side, piece, ctx);
@@ -104,6 +109,21 @@ function generateSacrificeNarrative(side: string, piece: string, ctx: MoveContex
     `${side} sacrifices the ${piece}! Material isn't everything — this creates powerful compensation.`,
     `A daring sacrifice! ${side} parts with the ${piece}, betting on dynamic play and initiative.`,
     `${side} gives up the ${piece} — a creative sacrifice aiming for long-term advantages beyond material.`,
+  ];
+  return pick(phrases, ctx.moveNumber);
+}
+
+function generateRecaptureNarrative(side: string, piece: string, ctx: MoveContext): string {
+  const target = ctx.capturedPiece ? PIECE_NAMES[ctx.capturedPiece] : 'piece';
+
+  if (ctx.isCheck) {
+    return `${side} recaptures the ${target} on ${ctx.to} with check — maintaining the initiative while restoring material balance.`;
+  }
+
+  const phrases = [
+    `${side} recaptures on ${ctx.to} with the ${piece}, restoring material balance.`,
+    `${side} takes back on ${ctx.to} — a natural recapture with the ${piece}.`,
+    `${side} recaptures the ${target} on ${ctx.to}. The material stays level.`,
   ];
   return pick(phrases, ctx.moveNumber);
 }
