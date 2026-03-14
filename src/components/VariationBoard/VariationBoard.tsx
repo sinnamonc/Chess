@@ -50,8 +50,8 @@ function getMoveArrowColor(move: ReturnType<Chess['move']>): string {
 function buildLineArrows(fen: string, pvUci: string[]) {
   const arrows: { startSquare: string; endSquare: string; color: string }[] = [];
   const chess = new Chess(fen);
-  const movesToShow = Math.min(pvUci.length, 4);
-  const opacities = [0.9, 0.55, 0.35, 0.2];
+  const movesToShow = Math.min(pvUci.length, 6);
+  const opacities = [0.9, 0.65, 0.5, 0.38, 0.28, 0.2];
 
   for (let i = 0; i < movesToShow; i++) {
     const uci = pvUci[i];
@@ -98,7 +98,7 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
     let moveNum = parseInt(parts[5] || '1');
 
     const formatted: string[] = [];
-    for (let i = 0; i < Math.min(line.pvSan.length, 4); i++) {
+    for (let i = 0; i < Math.min(line.pvSan.length, 8); i++) {
       const isWhite = (sideToMove === 'w' && i % 2 === 0) || (sideToMove === 'b' && i % 2 === 1);
       if (isWhite) {
         if (sideToMove === 'b' && i === 0) moveNum++;

@@ -111,17 +111,17 @@ export async function evaluateMove(
   const pool = getStockfishPool();
 
   // Two evaluations in parallel:
-  // 1. Position BEFORE move — MultiPV (for engine lines showing candidates)
-  // 2. Position AFTER move — Single PV (just need eval for the bar / cp loss)
+  // 1. Position BEFORE move — Single PV (just need eval for cp loss calculation)
+  // 2. Position AFTER move — MultiPV (for engine lines showing best responses)
   const [beforeResults, afterResults] = await Promise.all([
-    pool.evaluate(move.fenBefore, depth, NUM_LINES, priority),
-    pool.evaluate(move.fen, depth, 1, priority),
+    pool.evaluate(move.fenBefore, depth, 1, priority),
+    pool.evaluate(move.fen, depth, NUM_LINES, priority),
   ]);
 
-  const engineLines = toEngineLines(beforeResults, move.fenBefore);
-  const evalBefore = toEngineEvaluation(engineLines);
-  const afterLines = toEngineLines(afterResults, move.fen);
-  const evalAfter = toEngineEvaluation(afterLines);
+  const beforeLines = toEngineLines(beforeResults, move.fenBefore);
+  const evalBefore = toEngineEvaluation(beforeLines);
+  const engineLines = toEngineLines(afterResults, move.fen);
+  const evalAfter = toEngineEvaluation(engineLines);
 
   // CP loss calculation
   const scoreBefore = evalToScore(evalBefore);
@@ -163,8 +163,8 @@ export function evaluateMoveProgressive(
     try {
       // Check if we already have full-depth cached
       const pool = getStockfishPool();
-      const cachedBefore = pool.getCached(move.fenBefore, FULL_DEPTH, NUM_LINES);
-      const cachedAfter = pool.getCached(move.fen, FULL_DEPTH, 1);
+      const cachedBefore = pool.getCached(move.fenBefore, FULL_DEPTH, 1);
+      const cachedAfter = pool.getCached(move.fen, FULL_DEPTH, NUM_LINES);
 
       if (cachedBefore && cachedAfter) {
         // Already have full-depth results — skip quick pass
@@ -202,11 +202,11 @@ export function prefetchMoves(moves: AnalyzedMove[], centerIndex: number): void 
     const m = moves[idx];
 
     // Only prefetch if not already cached at full depth
-    if (!pool.getCached(m.fenBefore, FULL_DEPTH, NUM_LINES)) {
-      pool.evaluate(m.fenBefore, FULL_DEPTH, NUM_LINES, 10).catch(() => {});
+    if (!pool.getCached(m.fenBefore, FULL_DEPTH, 1)) {
+      pool.evaluate(m.fenBefore, FULL_DEPTH, 1, 10).catch(() => {});
     }
-    if (!pool.getCached(m.fen, FULL_DEPTH, 1)) {
-      pool.evaluate(m.fen, FULL_DEPTH, 1, 10).catch(() => {});
+    if (!pool.getCached(m.fen, FULL_DEPTH, NUM_LINES)) {
+      pool.evaluate(m.fen, FULL_DEPTH, NUM_LINES, 10).catch(() => {});
     }
   }
 }

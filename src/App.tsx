@@ -148,7 +148,7 @@ function App() {
   const currentMove: AnalyzedMove | null =
     moveIndex >= 0 ? game.moves[moveIndex] : null;
   const currentFen = currentMove ? currentMove.fen : game.startingFen;
-  const engineLinesFen = currentMove ? currentMove.fenBefore : game.startingFen;
+  const engineLinesFen = currentMove ? currentMove.fen : game.startingFen;
 
   const moveLabel = currentMove
     ? `${currentMove.moveNumber}.${currentMove.color === 'b' ? '..' : ''} ${currentMove.san}`
