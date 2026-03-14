@@ -139,3 +139,40 @@
   line-height: 1.5;
   font-style: italic;
 }
+
+@media (max-width: 600px) {
+  .container {
+    padding: 12px;
+    gap: 10px;
+    min-height: auto;
+  }
+
+  .players {
+    font-size: 15px;
+  }
+
+  .moveSan {
+    font-size: 16px;
+  }
+
+  .narrative {
+    padding: 10px;
+  }
+
+  .narrativeText {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .insightCard {
+    padding: 8px 10px;
+  }
+
+  .insightSummary {
+    font-size: 13px;
+  }
+
+  .insightDetail {
+    font-size: 12px;
+  }
+}

@@ -65,9 +65,40 @@
   .appMain {
     grid-template-columns: 1fr;
     padding: 12px;
+    gap: 12px;
   }
 
   .leftColumn {
     position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .appHeader {
+    padding: 8px 12px;
+  }
+
+  .appTitle {
+    font-size: 16px;
+  }
+
+  .newGameBtn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .appMain {
+    grid-template-columns: 1fr;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .leftColumn {
+    position: static;
+    gap: 6px;
+  }
+
+  .rightColumn {
+    gap: 8px;
   }
 }
