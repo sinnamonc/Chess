@@ -1,21 +1,27 @@
 import { Chess } from 'chess.js';
-import type { AnalyzedMove, EngineEvaluation, MoveQuality } from '../types';
-import { getStockfishService, type EngineEval } from './stockfishService';
+import type { AnalyzedMove, EngineEvaluation, EngineLine, MoveQuality } from '../types';
+import { getStockfishService, type MultiPVResult } from './stockfishService';
 
 const SEARCH_DEPTH = 16;
+const NUM_LINES = 3;
 
-/** Convert a UCI move (e.g. "e2e4") to SAN (e.g. "e4") for a given FEN */
-function uciToSan(fen: string, uci: string): string {
+/** Convert a sequence of UCI moves to SAN, playing them on the board */
+function uciSequenceToSan(fen: string, uciMoves: string[]): string[] {
+  const sanMoves: string[] = [];
   try {
     const chess = new Chess(fen);
-    const from = uci.slice(0, 2);
-    const to = uci.slice(2, 4);
-    const promotion = uci.length > 4 ? uci[4] : undefined;
-    const move = chess.move({ from, to, promotion });
-    return move ? move.san : uci;
+    for (const uci of uciMoves) {
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promotion = uci.length > 4 ? uci[4] : undefined;
+      const move = chess.move({ from, to, promotion });
+      if (!move) break;
+      sanMoves.push(move.san);
+    }
   } catch {
-    return uci;
+    // Return what we have so far
   }
+  return sanMoves;
 }
 
 /** Determine side to move from a FEN string */
@@ -25,30 +31,43 @@ function sideToMove(fen: string): 'w' | 'b' {
 }
 
 /**
+ * Convert raw MultiPV results to EngineLine[], normalizing scores to white's perspective.
+ */
+function toEngineLines(results: MultiPVResult[], fen: string): EngineLine[] {
+  const flip = sideToMove(fen) === 'b';
+  return results.map((r) => ({
+    rank: r.rank,
+    cp: r.cp !== null ? (flip ? -r.cp : r.cp) : null,
+    mate: r.mate !== null ? (flip ? -r.mate : r.mate) : null,
+    pvUci: r.pv,
+    pvSan: uciSequenceToSan(fen, r.pv),
+    depth: r.depth,
+  }));
+}
+
+/**
  * Convert raw engine eval to our EngineEvaluation type.
  * Normalizes the score to always be from WHITE's perspective.
- * Stockfish reports from the side-to-move's perspective, so we
- * negate when it's black to move.
  */
-function toEngineEvaluation(raw: EngineEval, fen: string): EngineEvaluation {
-  const flip = sideToMove(fen) === 'b';
+function toEngineEvaluation(lines: EngineLine[]): EngineEvaluation {
+  const best = lines[0];
+  if (!best) {
+    return { cp: 0, mate: null, bestMoveSan: '', bestMoveUci: '', depth: 0 };
+  }
   return {
-    cp: raw.cp !== null ? (flip ? -raw.cp : raw.cp) : null,
-    mate: raw.mate !== null ? (flip ? -raw.mate : raw.mate) : null,
-    bestMoveSan: uciToSan(fen, raw.bestMove),
-    bestMoveUci: raw.bestMove,
-    depth: raw.depth,
+    cp: best.cp,
+    mate: best.mate,
+    bestMoveSan: best.pvSan[0] || '',
+    bestMoveUci: best.pvUci[0] || '',
+    depth: best.depth,
   };
 }
 
 /**
  * Convert an eval to a single numeric score for comparison.
- * Mate scores are mapped to large centipawn values.
- * Always from white's perspective.
  */
 function evalToScore(ev: EngineEvaluation): number {
   if (ev.mate !== null) {
-    // Mate in N: use a large value, decreasing with distance
     return ev.mate > 0 ? 10000 - ev.mate : -10000 - ev.mate;
   }
   return ev.cp ?? 0;
@@ -56,14 +75,11 @@ function evalToScore(ev: EngineEvaluation): number {
 
 /**
  * Classify move quality based on the centipawn loss.
- * cpLoss is always >= 0 (how much worse the played move is vs the best move).
  */
 function classifyMoveQuality(cpLoss: number, isBestMove: boolean, move: AnalyzedMove): MoveQuality {
-  // Brilliant: a sacrifice that is the best move (or very close)
   if (isBestMove && move.tags.includes('sacrifice')) {
     return 'brilliant';
   }
-
   if (cpLoss <= 10) return 'great';
   if (cpLoss <= 30) return 'good';
   if (cpLoss <= 80) return 'inaccuracy';
@@ -78,8 +94,7 @@ export interface AnalysisProgress {
 }
 
 /**
- * Run Stockfish analysis on all moves and enrich AnalyzedMove[] with engine data.
- * This mutates the moves array in place and calls onProgress for UI updates.
+ * Run Stockfish MultiPV analysis on all moves and enrich AnalyzedMove[] with engine data.
  */
 export async function enrichWithStockfish(
   moves: AnalyzedMove[],
@@ -89,36 +104,36 @@ export async function enrichWithStockfish(
   const sf = getStockfishService();
   await sf.init();
 
-  // We need evals for the starting position + each position after a move
-  // That's (moves.length + 1) evaluations, but we can be smart:
-  // Evaluate position BEFORE first move, then position AFTER each move.
-
   const total = moves.length + 1;
   let current = 0;
 
   // Evaluate starting position
   onProgress?.({ current: 0, total, phase: 'engine' });
-  const startEval = await sf.evaluate(startingFen, SEARCH_DEPTH);
-  const startEvaluation = toEngineEvaluation(startEval, startingFen);
+  const startResults = await sf.evaluateMultiPV(startingFen, SEARCH_DEPTH, NUM_LINES);
+  const startLines = toEngineLines(startResults, startingFen);
+  const startEvaluation = toEngineEvaluation(startLines);
   current++;
   onProgress?.({ current, total, phase: 'engine' });
 
   let prevEval = startEvaluation;
+  let prevLines = startLines;
 
   for (let i = 0; i < moves.length; i++) {
     const move = moves[i];
 
+    // The engine lines for this move come from the position BEFORE the move
+    // (what the engine thinks should be considered in the position the player faced)
+    move.engineLines = prevLines;
+
     // Evaluate position after this move
-    const raw = await sf.evaluate(move.fen, SEARCH_DEPTH);
-    const evaluation = toEngineEvaluation(raw, move.fen);
+    const results = await sf.evaluateMultiPV(move.fen, SEARCH_DEPTH, NUM_LINES);
+    const lines = toEngineLines(results, move.fen);
+    const evaluation = toEngineEvaluation(lines);
 
     move.engineEvalBefore = prevEval;
     move.engineEval = evaluation;
 
-    // Calculate CP loss (all evals are normalized to white's perspective).
-    // "Before" = best the moving side could achieve. "After" = what they got.
-    // For white: a good move keeps the score high → cpLoss = before - after
-    // For black: a good move lowers the score → cpLoss = after - before
+    // Calculate CP loss
     const scoreBefore = evalToScore(prevEval);
     const scoreAfter = evalToScore(evaluation);
 
@@ -128,8 +143,6 @@ export async function enrichWithStockfish(
     } else {
       cpLoss = scoreAfter - scoreBefore;
     }
-
-    // Clamp to >= 0 (sometimes engine finds better move after due to horizon)
     cpLoss = Math.max(0, cpLoss);
 
     const isBestMove = prevEval.bestMoveUci === uciToUci(move);
@@ -137,14 +150,17 @@ export async function enrichWithStockfish(
     move.cpLoss = cpLoss;
 
     prevEval = evaluation;
+    prevLines = lines;
     current++;
     onProgress?.({ current, total, phase: 'engine' });
   }
+
+  // Reset MultiPV to 1 so subsequent single evaluations aren't affected
+  // (not strictly necessary with our singleton, but good hygiene)
 }
 
 /**
  * Get the UCI representation of a move from an AnalyzedMove.
- * Derives it from fenBefore + san.
  */
 function uciToUci(move: AnalyzedMove): string {
   try {

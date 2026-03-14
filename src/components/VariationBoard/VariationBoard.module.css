@@ -1,0 +1,60 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 10px;
+  border: 1px solid #334155;
+  min-width: 0;
+  flex: 1;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rankBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.eval {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #94a3b8;
+}
+
+.evalWhite {
+  color: #e2e8f0;
+}
+
+.evalBlack {
+  color: #64748b;
+}
+
+.boardWrap {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.continuation {
+  font-size: 12px;
+  color: #94a3b8;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 18px;
+}

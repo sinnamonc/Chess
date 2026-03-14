@@ -61,6 +61,22 @@ export type MoveQuality =
   | 'mistake'     // Significant error (80-200cp loss)
   | 'blunder';    // Major error (200+cp loss)
 
+// A single engine line (from MultiPV analysis)
+export interface EngineLine {
+  /** Rank (1 = best, 2 = second best, etc.) */
+  rank: number;
+  /** Centipawns from white's perspective. null when mate. */
+  cp: number | null;
+  /** Mate in N (positive = white mates). null if not a mate position. */
+  mate: number | null;
+  /** Moves in UCI notation */
+  pvUci: string[];
+  /** Moves in SAN notation */
+  pvSan: string[];
+  /** Search depth */
+  depth: number;
+}
+
 // Engine evaluation for a position
 export interface EngineEvaluation {
   /** Centipawns from white's perspective. null when mate. */
@@ -96,6 +112,8 @@ export interface AnalyzedMove {
   moveQuality?: MoveQuality;
   /** Centipawn loss from the best move */
   cpLoss?: number;
+  /** Top engine lines for the position BEFORE this move (what should be considered) */
+  engineLines?: EngineLine[];
 }
 
 // Parsed game headers

@@ -4,16 +4,15 @@ import { parsePgn } from './utils/pgnParser';
 import { analyzeGame } from './engine/analyzer';
 import { enrichWithStockfish, type AnalysisProgress } from './engine/stockfishAnalyzer';
 import Board from './components/Board/Board';
-import MoveList from './components/MoveList/MoveList';
-import InsightPanel from './components/InsightPanel/InsightPanel';
 import PgnInput from './components/PgnInput/PgnInput';
 import PositionMeter from './components/PositionMeter/PositionMeter';
 import NavigationBar from './components/NavigationBar/NavigationBar';
+import EngineLines from './components/EngineLines/EngineLines';
 import './App.css';
 
 function App() {
   const [game, setGame] = useState<AnalyzedGame | null>(null);
-  const [moveIndex, setMoveIndex] = useState(-1); // -1 = starting position
+  const [moveIndex, setMoveIndex] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [engineProgress, setEngineProgress] = useState<AnalysisProgress | null>(null);
@@ -23,7 +22,6 @@ function App() {
     setIsLoading(true);
     setEngineProgress(null);
 
-    // Use setTimeout to allow UI to update with loading state
     setTimeout(async () => {
       try {
         const parsed = parsePgn(pgn);
@@ -34,7 +32,6 @@ function App() {
           return;
         }
 
-        // Phase 1: Fast heuristic analysis — show results immediately
         const analyzedMoves = analyzeGame(parsed);
         const analyzedGame: AnalyzedGame = {
           headers: parsed.headers,
@@ -46,7 +43,7 @@ function App() {
         setMoveIndex(-1);
         setIsLoading(false);
 
-        // Phase 2: Stockfish engine analysis — enrich in background
+        // Stockfish enrichment in background
         setEngineProgress({ current: 0, total: analyzedMoves.length + 1, phase: 'engine' });
 
         try {
@@ -54,14 +51,13 @@ function App() {
             setEngineProgress({ ...progress });
           });
 
-          // Force re-render with enriched data
           setGame({
             headers: parsed.headers,
             moves: [...analyzedMoves],
             startingFen: parsed.startingFen,
           });
         } catch (engineErr) {
-          console.warn('Stockfish analysis failed, continuing with heuristic analysis:', engineErr);
+          console.warn('Stockfish analysis failed:', engineErr);
         }
 
         setEngineProgress(null);
@@ -91,7 +87,6 @@ function App() {
     () => setMoveIndex(game ? game.moves.length - 1 : -1),
     [game]
   );
-  const handleGoTo = useCallback((index: number) => setMoveIndex(index), []);
 
   const handleNewGame = useCallback(() => {
     setGame(null);
@@ -100,7 +95,6 @@ function App() {
     setEngineProgress(null);
   }, []);
 
-  // If no game loaded, show input screen
   if (!game) {
     return (
       <PgnInput onSubmit={handlePgnSubmit} error={error} isLoading={isLoading} />
@@ -111,10 +105,41 @@ function App() {
     moveIndex >= 0 ? game.moves[moveIndex] : null;
   const currentFen = currentMove ? currentMove.fen : game.startingFen;
 
+  // For engine lines, use the position BEFORE the current move (what the player faced)
+  const engineLinesFen = currentMove ? currentMove.fenBefore : game.startingFen;
+
+  // Build the current move label
+  const moveLabel = currentMove
+    ? `${currentMove.moveNumber}.${currentMove.color === 'b' ? '..' : ''} ${currentMove.san}`
+    : 'Starting position';
+
+  // Move quality badge
+  const qualitySymbol: Record<string, string> = {
+    brilliant: '!!',
+    great: '!',
+    good: '',
+    inaccuracy: '?!',
+    mistake: '?',
+    blunder: '??',
+  };
+  const qualityClass: Record<string, string> = {
+    brilliant: 'qualBrilliant',
+    great: 'qualGreat',
+    good: 'qualGood',
+    inaccuracy: 'qualInaccuracy',
+    mistake: 'qualMistake',
+    blunder: 'qualBlunder',
+  };
+
   return (
     <div className="app">
       <header className="appHeader">
         <h1 className="appTitle">Chess Insight</h1>
+        <div className="headerCenter">
+          <span className="gameInfo">
+            {game.headers.white} vs {game.headers.black}
+          </span>
+        </div>
         <div className="headerRight">
           {engineProgress && (
             <span className="engineStatus">
@@ -128,42 +153,43 @@ function App() {
       </header>
 
       <main className="appMain">
-        <div className="leftColumn">
-          <Board
-            fen={currentFen}
-            arrows={currentMove?.arrows || []}
-            highlights={currentMove?.highlights || []}
-          />
-          <PositionMeter
-            feel={currentMove?.positionFeel || null}
-            engineEval={currentMove?.engineEval || null}
-          />
-          <NavigationBar
-            currentIndex={moveIndex}
-            totalMoves={game.moves.length}
-            onFirst={handleFirst}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            onLast={handleLast}
-          />
+        <div className="boardSection">
+          <div className="boardRow">
+            <Board
+              fen={currentFen}
+              arrows={currentMove?.arrows || []}
+              highlights={currentMove?.highlights || []}
+            />
+            <div className="boardInfo">
+              <PositionMeter
+                feel={currentMove?.positionFeel || null}
+                engineEval={currentMove?.engineEval || null}
+              />
+              <div className="moveLabel">
+                <span className="moveSan">{moveLabel}</span>
+                {currentMove?.moveQuality && qualitySymbol[currentMove.moveQuality] && (
+                  <span className={`moveQuality ${qualityClass[currentMove.moveQuality]}`}>
+                    {qualitySymbol[currentMove.moveQuality]}
+                  </span>
+                )}
+              </div>
+              <NavigationBar
+                currentIndex={moveIndex}
+                totalMoves={game.moves.length}
+                onFirst={handleFirst}
+                onPrev={handlePrev}
+                onNext={handleNext}
+                onLast={handleLast}
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="rightColumn">
-          <InsightPanel
-            move={currentMove}
-            moveIndex={moveIndex}
-            totalMoves={game.moves.length}
-            gameInfo={{
-              white: game.headers.white,
-              black: game.headers.black,
-              event: game.headers.event,
-              result: game.headers.result,
-            }}
-          />
-          <MoveList
-            moves={game.moves}
-            currentIndex={moveIndex}
-            onMoveClick={handleGoTo}
+        <div className="linesSection">
+          <h2 className="linesSectionTitle">Engine Lines</h2>
+          <EngineLines
+            lines={currentMove?.engineLines}
+            fen={engineLinesFen}
           />
         </div>
       </main>

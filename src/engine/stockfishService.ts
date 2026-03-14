@@ -18,6 +18,14 @@ export interface EngineEval {
   depth: number;
 }
 
+export interface MultiPVResult {
+  rank: number;
+  cp: number | null;
+  mate: number | null;
+  pv: string[];
+  depth: number;
+}
+
 type ReadyCallback = () => void;
 
 export class StockfishService {
@@ -114,6 +122,72 @@ export class StockfishService {
       this.worker!.addEventListener('message', readyHandler);
 
       this.worker!.postMessage('stop');
+      this.worker!.postMessage(`position fen ${fen}`);
+      this.worker!.postMessage('isready');
+    });
+  }
+
+  /**
+   * Evaluate a position with multiple principal variations (MultiPV).
+   * Returns an array of lines sorted by rank.
+   */
+  async evaluateMultiPV(fen: string, depth = 16, numLines = 3): Promise<MultiPVResult[]> {
+    if (!this.worker || !this.isReady) {
+      throw new Error('Stockfish not initialized. Call init() first.');
+    }
+
+    return new Promise((resolve) => {
+      // Track the best info per multipv line at the deepest depth seen
+      const lines = new Map<number, MultiPVResult>();
+
+      const handler = (e: MessageEvent) => {
+        const line = typeof e.data === 'string' ? e.data : '';
+
+        if (line.startsWith('info') && line.includes('score') && line.includes(' pv ')) {
+          const depthMatch = line.match(/\bdepth (\d+)/);
+          const multipvMatch = line.match(/\bmultipv (\d+)/);
+          const cpMatch = line.match(/\bscore cp (-?\d+)/);
+          const mateMatch = line.match(/\bscore mate (-?\d+)/);
+          const pvMatch = line.match(/ pv (.+)/);
+
+          const rank = multipvMatch ? parseInt(multipvMatch[1]) : 1;
+          const d = depthMatch ? parseInt(depthMatch[1]) : 0;
+          const pv = pvMatch ? pvMatch[1].trim().split(/\s+/) : [];
+
+          const entry: MultiPVResult = {
+            rank,
+            cp: cpMatch ? parseInt(cpMatch[1]) : (mateMatch ? null : 0),
+            mate: mateMatch ? parseInt(mateMatch[1]) : null,
+            pv,
+            depth: d,
+          };
+
+          // Only keep the deepest result per rank
+          const existing = lines.get(rank);
+          if (!existing || d >= existing.depth) {
+            lines.set(rank, entry);
+          }
+        }
+
+        if (line.startsWith('bestmove')) {
+          this.worker!.removeEventListener('message', handler);
+          const result = Array.from(lines.values()).sort((a, b) => a.rank - b.rank);
+          resolve(result);
+        }
+      };
+
+      this.worker!.addEventListener('message', handler);
+
+      const readyHandler = (e: MessageEvent) => {
+        if (typeof e.data === 'string' && e.data === 'readyok') {
+          this.worker!.removeEventListener('message', readyHandler);
+          this.worker!.postMessage(`go depth ${depth}`);
+        }
+      };
+      this.worker!.addEventListener('message', readyHandler);
+
+      this.worker!.postMessage('stop');
+      this.worker!.postMessage(`setoption name MultiPV value ${numLines}`);
       this.worker!.postMessage(`position fen ${fen}`);
       this.worker!.postMessage('isready');
     });

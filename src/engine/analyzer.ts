@@ -5,7 +5,6 @@ import { analyzeKingSafety } from './kingSafety';
 import { analyzePawnStructure } from './pawnStructure';
 import { analyzeActivity } from './pieceActivity';
 import { detectThreats } from './tactics';
-import { generateNarrative } from './narrativeGenerator';
 import { generateArrows } from './arrowGenerator';
 
 /**
@@ -196,24 +195,6 @@ export function analyzeGame(game: ParsedGame): AnalyzedMove[] {
     const prevMove = i > 0 ? game.moves[i - 1] : undefined;
     const tags = determineTags(move, move.fenBefore, move.fen, prevMove);
 
-    const narrative = generateNarrative({
-      san: move.san,
-      color: move.color,
-      moveNumber: move.moveNumber,
-      isCapture: !!move.captured,
-      isCheck: move.isCheck,
-      isCheckmate: move.isCheckmate,
-      isCastling: move.isCastling,
-      isPromotion: move.isPromotion,
-      pieceMoved: move.piece,
-      from: move.from as any,
-      to: move.to as any,
-      capturedPiece: move.captured,
-      analysisBefore,
-      analysisAfter,
-      tags,
-    });
-
     const { arrows, highlights } = generateArrows(move, analysisBefore, analysisAfter, tags);
     const insights = buildInsights(analysisAfter);
 
@@ -223,7 +204,7 @@ export function analyzeGame(game: ParsedGame): AnalyzedMove[] {
       color: move.color,
       fen: move.fen,
       fenBefore: move.fenBefore,
-      narrative,
+      narrative: '',
       arrows,
       highlights: highlights as any,
       positionFeel: analysisAfter.positionFeel,
