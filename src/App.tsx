@@ -140,6 +140,13 @@ function App() {
     setEngineDepth(null);
   }, []);
 
+  // Opening recognition: match against moves up to current index
+  const opening = useMemo(() => {
+    if (!game || moveIndex < 0) return null;
+    const sanMoves = game.moves.slice(0, moveIndex + 1).map((m) => m.san);
+    return identifyOpening(sanMoves);
+  }, [game, moveIndex]);
+
   if (!game) {
     return (
       <PgnInput onSubmit={handlePgnSubmit} error={error} isLoading={isLoading} />
@@ -154,13 +161,6 @@ function App() {
   const moveLabel = currentMove
     ? `${currentMove.moveNumber}.${currentMove.color === 'b' ? '..' : ''} ${currentMove.san}`
     : 'Starting position';
-
-  // Opening recognition: match against moves up to current index
-  const opening = useMemo(() => {
-    if (!game) return null;
-    const sanMoves = game.moves.slice(0, moveIndex + 1).map((m) => m.san);
-    return identifyOpening(sanMoves);
-  }, [game, moveIndex]);
 
   const qualitySymbol: Record<string, string> = {
     brilliant: '!!', great: '!', good: '', inaccuracy: '?!', mistake: '?', blunder: '??',
