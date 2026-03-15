@@ -50,11 +50,42 @@
 }
 
 .continuation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 5px;
   font-size: 12px;
-  color: #94a3b8;
+  color: #475569;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   min-height: 18px;
+}
+
+.moveToken {
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  transition: color 0.15s, background-color 0.15s;
+  user-select: none;
+}
+
+.moveToken:hover {
+  background: rgba(148, 163, 184, 0.15);
+  color: #e2e8f0;
+}
+
+/* Move has been played in the animation sequence */
+.movePast {
+  color: #94a3b8;
+}
+
+/* Currently animating arrow for this move */
+.moveActive {
+  color: #e2e8f0;
+  background: rgba(96, 165, 250, 0.2);
+}
+
+/* User clicked to explore this move */
+.moveExploring {
+  color: #e2e8f0;
+  background: rgba(74, 222, 128, 0.25);
+  border-radius: 3px;
 }

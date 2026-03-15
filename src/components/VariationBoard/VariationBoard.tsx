@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
 import type { EngineLine } from '../../types';
@@ -82,6 +82,52 @@ function buildLineArrows(fen: string, pvUci: string[]): ArrowData[] {
   return arrows;
 }
 
+/** Build FENs for each move in the PV (for click-to-explore) */
+function buildPvFens(fen: string, pvUci: string[]): string[] {
+  const fens: string[] = [];
+  const chess = new Chess(fen);
+
+  for (const uci of pvUci) {
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promotion = uci.length > 4 ? uci[4] : undefined;
+    try {
+      chess.move({ from, to, promotion });
+      fens.push(chess.fen());
+    } catch {
+      break;
+    }
+  }
+
+  return fens;
+}
+
+/** Format SAN moves into tokens with move number prefixes */
+function buildSanTokens(fen: string, pvSan: string[], count: number) {
+  const parts = fen.split(' ');
+  const sideToMove = parts[1] || 'w';
+  let moveNum = parseInt(parts[5] || '1');
+
+  const tokens: { text: string; moveIndex: number }[] = [];
+  for (let i = 0; i < Math.min(pvSan.length, count); i++) {
+    const isWhite = (sideToMove === 'w' && i % 2 === 0) || (sideToMove === 'b' && i % 2 === 1);
+    let text: string;
+    if (isWhite) {
+      if (sideToMove === 'b' && i === 0) moveNum++;
+      text = `${moveNum}.${pvSan[i]}`;
+      if (i > 0 || sideToMove === 'w') moveNum++;
+    } else {
+      if (i === 0 && sideToMove === 'b') {
+        text = `${moveNum}...${pvSan[i]}`;
+      } else {
+        text = pvSan[i];
+      }
+    }
+    tokens.push({ text, moveIndex: i });
+  }
+  return tokens;
+}
+
 export default function VariationBoard({ fen, line }: VariationBoardProps) {
   const evalStr = formatEval(line);
   const isPositive = (line.cp !== null && line.cp > 0) || (line.mate !== null && line.mate > 0);
@@ -92,34 +138,45 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
     [fen, line.pvUci]
   );
 
+  const pvFens = useMemo(
+    () => buildPvFens(fen, line.pvUci),
+    [fen, line.pvUci]
+  );
+
+  const sanTokens = useMemo(
+    () => buildSanTokens(fen, line.pvSan, 8),
+    [fen, line.pvSan]
+  );
+
   // Animate: reveal arrows one at a time, then pause, then reset
   const [visibleCount, setVisibleCount] = useState(0);
+  // Which move the user clicked on (null = show animated arrows on base position)
+  const [exploringIndex, setExploringIndex] = useState<number | null>(null);
+
+  // Reset exploration when the line changes
+  useEffect(() => {
+    setExploringIndex(null);
+  }, [fen, line.pvUci]);
 
   useEffect(() => {
-    if (allArrows.length === 0) return;
+    if (allArrows.length === 0 || exploringIndex !== null) return;
 
     setVisibleCount(0);
 
-    // Total cycle: one tick per arrow + one longer pause at the end before reset
-    // visibleCount goes 0 → 1 → 2 → ... → allArrows.length → (pause) → 0
     let step = 0;
     const tick = () => {
       step++;
       if (step <= allArrows.length) {
         setVisibleCount(step);
       } else {
-        // Reset after pause
         step = 0;
         setVisibleCount(0);
       }
     };
 
-    // First arrow appears after initial delay
     const firstTimeout = setTimeout(() => {
       tick();
-      // Then set up interval for remaining arrows
       const id = setInterval(() => {
-        // Use longer delay when all arrows are shown (pause at end)
         tick();
       }, ARROW_INTERVAL_MS);
       intervalRef = id;
@@ -131,33 +188,23 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
       clearTimeout(firstTimeout);
       if (intervalRef) clearInterval(intervalRef);
     };
-  }, [allArrows.length, fen, line.pvUci]);
+  }, [allArrows.length, fen, line.pvUci, exploringIndex]);
 
-  const visibleArrows = allArrows.slice(0, visibleCount);
+  const handleMoveClick = useCallback((moveIdx: number) => {
+    setExploringIndex((prev) => prev === moveIdx ? null : moveIdx);
+  }, []);
 
-  // Format the SAN continuation
-  const sanDisplay = useMemo(() => {
-    const parts = fen.split(' ');
-    const sideToMove = parts[1] || 'w';
-    let moveNum = parseInt(parts[5] || '1');
+  // Determine what to show on the board
+  const boardFen = exploringIndex !== null && pvFens[exploringIndex]
+    ? pvFens[exploringIndex]
+    : fen;
 
-    const formatted: string[] = [];
-    for (let i = 0; i < Math.min(line.pvSan.length, 8); i++) {
-      const isWhite = (sideToMove === 'w' && i % 2 === 0) || (sideToMove === 'b' && i % 2 === 1);
-      if (isWhite) {
-        if (sideToMove === 'b' && i === 0) moveNum++;
-        formatted.push(`${moveNum}.${line.pvSan[i]}`);
-        if (i > 0 || sideToMove === 'w') moveNum++;
-      } else {
-        if (i === 0 && sideToMove === 'b') {
-          formatted.push(`${moveNum}...${line.pvSan[i]}`);
-        } else {
-          formatted.push(line.pvSan[i]);
-        }
-      }
-    }
-    return formatted.join(' ');
-  }, [fen, line.pvSan]);
+  const visibleArrows = exploringIndex !== null
+    ? [] // no arrows when exploring a specific position
+    : allArrows.slice(0, visibleCount);
+
+  // For highlighting: which move index is "active" in the animation
+  const animActiveIndex = visibleCount > 0 ? visibleCount - 1 : -1;
 
   const rankBadgeColor: Record<number, string> = {
     1: '#22c55e',
@@ -181,7 +228,7 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
       <div className={styles.boardWrap}>
         <Chessboard
           options={{
-            position: fen,
+            position: boardFen,
             arrows: visibleArrows,
             darkSquareStyle: { backgroundColor: '#4a6741' },
             lightSquareStyle: { backgroundColor: '#e8dcc8' },
@@ -192,7 +239,22 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
         />
       </div>
       <div className={styles.continuation}>
-        {sanDisplay}
+        {sanTokens.map((token) => {
+          const isAnimActive = exploringIndex === null && token.moveIndex === animActiveIndex;
+          const isExploring = exploringIndex === token.moveIndex;
+          const isPast = exploringIndex === null
+            ? token.moveIndex < visibleCount
+            : token.moveIndex <= exploringIndex;
+          return (
+            <span
+              key={token.moveIndex}
+              className={`${styles.moveToken} ${isAnimActive ? styles.moveActive : ''} ${isExploring ? styles.moveExploring : ''} ${isPast ? styles.movePast : ''}`}
+              onClick={() => handleMoveClick(token.moveIndex)}
+            >
+              {token.text}
+            </span>
+          );
+        })}
       </div>
     </div>
   );

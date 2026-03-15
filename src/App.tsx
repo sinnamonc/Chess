@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { AnalyzedGame, AnalyzedMove } from './types';
 import { parsePgn } from './utils/pgnParser';
 import { analyzeGame } from './engine/analyzer';
 import { evaluateMoveProgressive, prefetchMoves } from './engine/stockfishAnalyzer';
 import { getStockfishPool } from './engine/stockfishPool';
+import { identifyOpening } from './utils/openings';
 import Board from './components/Board/Board';
 import PgnInput from './components/PgnInput/PgnInput';
 import PositionMeter from './components/PositionMeter/PositionMeter';
@@ -154,6 +155,13 @@ function App() {
     ? `${currentMove.moveNumber}.${currentMove.color === 'b' ? '..' : ''} ${currentMove.san}`
     : 'Starting position';
 
+  // Opening recognition: match against moves up to current index
+  const opening = useMemo(() => {
+    if (!game) return null;
+    const sanMoves = game.moves.slice(0, moveIndex + 1).map((m) => m.san);
+    return identifyOpening(sanMoves);
+  }, [game, moveIndex]);
+
   const qualitySymbol: Record<string, string> = {
     brilliant: '!!', great: '!', good: '', inaccuracy: '?!', mistake: '?', blunder: '??',
   };
@@ -170,6 +178,11 @@ function App() {
           <span className="gameInfo">
             {game.headers.white} vs {game.headers.black}
           </span>
+          {opening && (
+            <span className="openingInfo">
+              <span className="openingEco">{opening.eco}</span> {opening.name}
+            </span>
+          )}
         </div>
         <div className="headerRight">
           {currentMove && engineDepth !== null && engineDepth < 16 && (
