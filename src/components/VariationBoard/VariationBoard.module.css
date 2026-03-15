@@ -45,8 +45,34 @@
 }
 
 .boardWrap {
+  position: relative;
   border-radius: 6px;
   overflow: hidden;
+}
+
+/* Overlay layer for numbered labels on arrows */
+.arrowLabels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.arrowLabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  line-height: 1;
 }
 
 .continuation {
@@ -72,20 +98,18 @@
   color: #e2e8f0;
 }
 
-/* Move has been played in the animation sequence */
-.movePast {
-  color: #94a3b8;
+/* White's moves — cool blue tones */
+.moveWhite {
+  color: #7dd3fc;
 }
 
-/* Currently animating arrow for this move */
-.moveActive {
-  color: #e2e8f0;
-  background: rgba(96, 165, 250, 0.2);
+/* Black's moves — warm amber tones */
+.moveBlack {
+  color: #fbbf24;
 }
 
 /* User clicked to explore this move */
 .moveExploring {
   color: #e2e8f0;
   background: rgba(74, 222, 128, 0.25);
-  border-radius: 3px;
 }

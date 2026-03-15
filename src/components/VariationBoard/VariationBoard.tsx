@@ -9,15 +9,19 @@ interface VariationBoardProps {
   line: EngineLine;
 }
 
-/** Same RGBA palette as the main board */
-const ARROW_COLORS: Record<string, string> = {
-  green: 'rgba(0, 180, 90, 0.8)',
-  red: 'rgba(220, 50, 50, 0.8)',
-  yellow: 'rgba(220, 180, 0, 0.8)',
-  blue: 'rgba(50, 130, 220, 0.8)',
+/** White's move colors (cool tones) */
+const WHITE_COLORS = {
+  base: { r: 0, g: 160, b: 220 },   // blue-cyan
+  capture: { r: 70, g: 100, b: 220 }, // blue-purple for captures/checks
+  castle: { r: 50, g: 130, b: 220 },  // blue
 };
 
-const ARROW_INTERVAL_MS = 800;
+/** Black's move colors (warm tones) */
+const BLACK_COLORS = {
+  base: { r: 220, g: 140, b: 30 },    // amber-orange
+  capture: { r: 220, g: 80, b: 50 },   // red-orange for captures/checks
+  castle: { r: 200, g: 160, b: 50 },   // gold
+};
 
 /** Format eval for display */
 function formatEval(line: EngineLine): string {
@@ -29,18 +33,8 @@ function formatEval(line: EngineLine): string {
   return val > 0 ? `+${val.toFixed(1)}` : val.toFixed(1);
 }
 
-/** Classify a chess.js move result to get the semantic arrow color */
-function getMoveArrowColor(move: ReturnType<Chess['move']>): string {
-  if (!move) return ARROW_COLORS.green;
-
-  if (move.flags.includes('k') || move.flags.includes('q')) {
-    return ARROW_COLORS.blue;
-  }
-  if (move.san.includes('#')) return ARROW_COLORS.red;
-  if (move.san.includes('+')) return ARROW_COLORS.red;
-  if (move.captured) return ARROW_COLORS.red;
-
-  return ARROW_COLORS.green;
+function rgba(c: { r: number; g: number; b: number }, opacity: number): string {
+  return `rgba(${c.r}, ${c.g}, ${c.b}, ${opacity})`;
 }
 
 interface ArrowData {
@@ -49,18 +43,31 @@ interface ArrowData {
   color: string;
 }
 
-/** Build all arrows from PV with semantic colors and fading opacity */
-function buildLineArrows(fen: string, pvUci: string[]): ArrowData[] {
-  const arrows: ArrowData[] = [];
+interface ArrowMeta {
+  arrow: ArrowData;
+  number: number;
+  fromSquare: string;
+  isWhiteMove: boolean;
+  labelColor: string;
+}
+
+/** Build all arrows with numbered metadata and alternating side colors */
+function buildLineArrows(fen: string, pvUci: string[]): ArrowMeta[] {
+  const result: ArrowMeta[] = [];
   const chess = new Chess(fen);
   const movesToShow = Math.min(pvUci.length, 6);
-  const opacities = [0.9, 0.65, 0.5, 0.38, 0.28, 0.2];
+  const opacities = [0.85, 0.7, 0.55, 0.42, 0.32, 0.24];
+  const sideToMove = fen.split(' ')[1] === 'b' ? 'b' : 'w';
 
   for (let i = 0; i < movesToShow; i++) {
     const uci = pvUci[i];
     const from = uci.slice(0, 2);
     const to = uci.slice(2, 4);
     const promotion = uci.length > 4 ? uci[4] : undefined;
+
+    // Determine which side is moving
+    const isWhiteMove = (sideToMove === 'w') ? (i % 2 === 0) : (i % 2 === 1);
+    const palette = isWhiteMove ? WHITE_COLORS : BLACK_COLORS;
 
     let moveResult;
     try {
@@ -70,16 +77,37 @@ function buildLineArrows(fen: string, pvUci: string[]): ArrowData[] {
     }
     if (!moveResult) break;
 
-    const baseColor = getMoveArrowColor(moveResult);
-    const baseMatch = baseColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    const color = baseMatch
-      ? `rgba(${baseMatch[1]}, ${baseMatch[2]}, ${baseMatch[3]}, ${opacities[i]})`
-      : baseColor;
+    // Pick color variant based on move type
+    let colorBase = palette.base;
+    if (moveResult.flags.includes('k') || moveResult.flags.includes('q')) {
+      colorBase = palette.castle;
+    } else if (moveResult.san.includes('#') || moveResult.san.includes('+') || moveResult.captured) {
+      colorBase = palette.capture;
+    }
 
-    arrows.push({ startSquare: from, endSquare: to, color });
+    const color = rgba(colorBase, opacities[i]);
+    const labelColor = rgba(colorBase, 1);
+
+    result.push({
+      arrow: { startSquare: from, endSquare: to, color },
+      number: i + 1,
+      fromSquare: from,
+      isWhiteMove,
+      labelColor,
+    });
   }
 
-  return arrows;
+  return result;
+}
+
+/** Convert square name to percentage position on the board */
+function squareToPercent(square: string): { left: number; top: number } {
+  const file = square.charCodeAt(0) - 97; // a=0, h=7
+  const rank = parseInt(square[1]) - 1;   // 1=0, 8=7
+  return {
+    left: file * 12.5 + 6.25,  // center of square
+    top: (7 - rank) * 12.5 + 6.25,
+  };
 }
 
 /** Build FENs for each move in the PV (for click-to-explore) */
@@ -108,7 +136,7 @@ function buildSanTokens(fen: string, pvSan: string[], count: number) {
   const sideToMove = parts[1] || 'w';
   let moveNum = parseInt(parts[5] || '1');
 
-  const tokens: { text: string; moveIndex: number }[] = [];
+  const tokens: { text: string; moveIndex: number; isWhite: boolean }[] = [];
   for (let i = 0; i < Math.min(pvSan.length, count); i++) {
     const isWhite = (sideToMove === 'w' && i % 2 === 0) || (sideToMove === 'b' && i % 2 === 1);
     let text: string;
@@ -123,7 +151,7 @@ function buildSanTokens(fen: string, pvSan: string[], count: number) {
         text = pvSan[i];
       }
     }
-    tokens.push({ text, moveIndex: i });
+    tokens.push({ text, moveIndex: i, isWhite });
   }
   return tokens;
 }
@@ -133,7 +161,7 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
   const isPositive = (line.cp !== null && line.cp > 0) || (line.mate !== null && line.mate > 0);
   const isNegative = (line.cp !== null && line.cp < 0) || (line.mate !== null && line.mate < 0);
 
-  const allArrows = useMemo(
+  const arrowMetas = useMemo(
     () => buildLineArrows(fen, line.pvUci),
     [fen, line.pvUci]
   );
@@ -148,47 +176,13 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
     [fen, line.pvSan]
   );
 
-  // Animate: reveal arrows one at a time, then pause, then reset
-  const [visibleCount, setVisibleCount] = useState(0);
-  // Which move the user clicked on (null = show animated arrows on base position)
+  // Which move the user clicked on (null = show all arrows on base position)
   const [exploringIndex, setExploringIndex] = useState<number | null>(null);
 
   // Reset exploration when the line changes
   useEffect(() => {
     setExploringIndex(null);
   }, [fen, line.pvUci]);
-
-  useEffect(() => {
-    if (allArrows.length === 0 || exploringIndex !== null) return;
-
-    setVisibleCount(0);
-
-    let step = 0;
-    const tick = () => {
-      step++;
-      if (step <= allArrows.length) {
-        setVisibleCount(step);
-      } else {
-        step = 0;
-        setVisibleCount(0);
-      }
-    };
-
-    const firstTimeout = setTimeout(() => {
-      tick();
-      const id = setInterval(() => {
-        tick();
-      }, ARROW_INTERVAL_MS);
-      intervalRef = id;
-    }, ARROW_INTERVAL_MS);
-
-    let intervalRef: ReturnType<typeof setInterval> | null = null;
-
-    return () => {
-      clearTimeout(firstTimeout);
-      if (intervalRef) clearInterval(intervalRef);
-    };
-  }, [allArrows.length, fen, line.pvUci, exploringIndex]);
 
   const handleMoveClick = useCallback((moveIdx: number) => {
     setExploringIndex((prev) => prev === moveIdx ? null : moveIdx);
@@ -199,12 +193,7 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
     ? pvFens[exploringIndex]
     : fen;
 
-  const visibleArrows = exploringIndex !== null
-    ? [] // no arrows when exploring a specific position
-    : allArrows.slice(0, visibleCount);
-
-  // For highlighting: which move index is "active" in the animation
-  const animActiveIndex = visibleCount > 0 ? visibleCount - 1 : -1;
+  const showArrows = exploringIndex === null;
 
   const rankBadgeColor: Record<number, string> = {
     1: '#22c55e',
@@ -229,7 +218,7 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
         <Chessboard
           options={{
             position: boardFen,
-            arrows: visibleArrows,
+            arrows: showArrows ? arrowMetas.map((m) => m.arrow) : [],
             darkSquareStyle: { backgroundColor: '#4a6741' },
             lightSquareStyle: { backgroundColor: '#e8dcc8' },
             animationDurationInMs: 0,
@@ -237,18 +226,34 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
             allowDrawingArrows: false,
           }}
         />
+        {showArrows && (
+          <div className={styles.arrowLabels}>
+            {arrowMetas.map((meta) => {
+              const pos = squareToPercent(meta.fromSquare);
+              return (
+                <span
+                  key={meta.number}
+                  className={styles.arrowLabel}
+                  style={{
+                    left: `${pos.left}%`,
+                    top: `${pos.top}%`,
+                    backgroundColor: meta.labelColor,
+                  }}
+                >
+                  {meta.number}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div className={styles.continuation}>
         {sanTokens.map((token) => {
-          const isAnimActive = exploringIndex === null && token.moveIndex === animActiveIndex;
           const isExploring = exploringIndex === token.moveIndex;
-          const isPast = exploringIndex === null
-            ? token.moveIndex < visibleCount
-            : token.moveIndex <= exploringIndex;
           return (
             <span
               key={token.moveIndex}
-              className={`${styles.moveToken} ${isAnimActive ? styles.moveActive : ''} ${isExploring ? styles.moveExploring : ''} ${isPast ? styles.movePast : ''}`}
+              className={`${styles.moveToken} ${isExploring ? styles.moveExploring : ''} ${token.isWhite ? styles.moveWhite : styles.moveBlack}`}
               onClick={() => handleMoveClick(token.moveIndex)}
             >
               {token.text}
