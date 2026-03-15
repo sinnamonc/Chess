@@ -90,7 +90,7 @@ export default function NavigationBar({
           disabled={currentIndex < 0}
           title="First move (Home)"
         >
-          &#x23EE;
+          &laquo;
         </button>
         <button
           className={styles.navBtn}
@@ -98,7 +98,7 @@ export default function NavigationBar({
           disabled={currentIndex < 0}
           title="Previous move (←)"
         >
-          &#x23F4;
+          &lsaquo;
         </button>
         <button
           className={`${styles.navBtn} ${styles.playBtn}`}
@@ -106,7 +106,7 @@ export default function NavigationBar({
           disabled={currentIndex >= totalMoves - 1}
           title="Auto-play (Space)"
         >
-          {isPlaying ? '\u23F8' : '\u23F5'}
+          {isPlaying ? '||' : '\u25B6'}
         </button>
         <button
           className={styles.navBtn}
@@ -114,7 +114,7 @@ export default function NavigationBar({
           disabled={currentIndex >= totalMoves - 1}
           title="Next move (→)"
         >
-          &#x23F5;
+          &rsaquo;
         </button>
         <button
           className={styles.navBtn}
@@ -122,7 +122,7 @@ export default function NavigationBar({
           disabled={currentIndex >= totalMoves - 1}
           title="Last move (End)"
         >
-          &#x23ED;
+          &raquo;
         </button>
       </div>
 
