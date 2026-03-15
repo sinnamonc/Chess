@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
 import type { EngineLine } from '../../types';
@@ -17,6 +17,8 @@ const ARROW_COLORS: Record<string, string> = {
   blue: 'rgba(50, 130, 220, 0.8)',
 };
 
+const ARROW_INTERVAL_MS = 800;
+
 /** Format eval for display */
 function formatEval(line: EngineLine): string {
   if (line.mate !== null) {
@@ -31,14 +33,9 @@ function formatEval(line: EngineLine): string {
 function getMoveArrowColor(move: ReturnType<Chess['move']>): string {
   if (!move) return ARROW_COLORS.green;
 
-  // Castling
   if (move.flags.includes('k') || move.flags.includes('q')) {
     return ARROW_COLORS.blue;
   }
-
-  // Check if it's a sacrifice: capturing a lower-value piece with a higher-value one
-  // or moving a high-value piece to a square where it can be captured
-  // Simplified: check + capture = red (it's forcing), just capture = red
   if (move.san.includes('#')) return ARROW_COLORS.red;
   if (move.san.includes('+')) return ARROW_COLORS.red;
   if (move.captured) return ARROW_COLORS.red;
@@ -46,9 +43,15 @@ function getMoveArrowColor(move: ReturnType<Chess['move']>): string {
   return ARROW_COLORS.green;
 }
 
-/** Build arrows from PV, using semantic colors with fading opacity */
-function buildLineArrows(fen: string, pvUci: string[]) {
-  const arrows: { startSquare: string; endSquare: string; color: string }[] = [];
+interface ArrowData {
+  startSquare: string;
+  endSquare: string;
+  color: string;
+}
+
+/** Build all arrows from PV with semantic colors and fading opacity */
+function buildLineArrows(fen: string, pvUci: string[]): ArrowData[] {
+  const arrows: ArrowData[] = [];
   const chess = new Chess(fen);
   const movesToShow = Math.min(pvUci.length, 6);
   const opacities = [0.9, 0.65, 0.5, 0.38, 0.28, 0.2];
@@ -59,7 +62,6 @@ function buildLineArrows(fen: string, pvUci: string[]) {
     const to = uci.slice(2, 4);
     const promotion = uci.length > 4 ? uci[4] : undefined;
 
-    // Play the move to classify it
     let moveResult;
     try {
       moveResult = chess.move({ from, to, promotion });
@@ -68,7 +70,6 @@ function buildLineArrows(fen: string, pvUci: string[]) {
     }
     if (!moveResult) break;
 
-    // Get semantic color, then apply fading opacity
     const baseColor = getMoveArrowColor(moveResult);
     const baseMatch = baseColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     const color = baseMatch
@@ -86,10 +87,53 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
   const isPositive = (line.cp !== null && line.cp > 0) || (line.mate !== null && line.mate > 0);
   const isNegative = (line.cp !== null && line.cp < 0) || (line.mate !== null && line.mate < 0);
 
-  const arrows = useMemo(
+  const allArrows = useMemo(
     () => buildLineArrows(fen, line.pvUci),
     [fen, line.pvUci]
   );
+
+  // Animate: reveal arrows one at a time, then pause, then reset
+  const [visibleCount, setVisibleCount] = useState(0);
+
+  useEffect(() => {
+    if (allArrows.length === 0) return;
+
+    setVisibleCount(0);
+
+    // Total cycle: one tick per arrow + one longer pause at the end before reset
+    // visibleCount goes 0 → 1 → 2 → ... → allArrows.length → (pause) → 0
+    let step = 0;
+    const tick = () => {
+      step++;
+      if (step <= allArrows.length) {
+        setVisibleCount(step);
+      } else {
+        // Reset after pause
+        step = 0;
+        setVisibleCount(0);
+      }
+    };
+
+    // First arrow appears after initial delay
+    const firstTimeout = setTimeout(() => {
+      tick();
+      // Then set up interval for remaining arrows
+      const id = setInterval(() => {
+        // Use longer delay when all arrows are shown (pause at end)
+        tick();
+      }, ARROW_INTERVAL_MS);
+      intervalRef = id;
+    }, ARROW_INTERVAL_MS);
+
+    let intervalRef: ReturnType<typeof setInterval> | null = null;
+
+    return () => {
+      clearTimeout(firstTimeout);
+      if (intervalRef) clearInterval(intervalRef);
+    };
+  }, [allArrows.length, fen, line.pvUci]);
+
+  const visibleArrows = allArrows.slice(0, visibleCount);
 
   // Format the SAN continuation
   const sanDisplay = useMemo(() => {
@@ -115,7 +159,6 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
     return formatted.join(' ');
   }, [fen, line.pvSan]);
 
-  // Rank badge color — keep distinct per rank for identification
   const rankBadgeColor: Record<number, string> = {
     1: '#22c55e',
     2: '#3b82f6',
@@ -139,7 +182,7 @@ export default function VariationBoard({ fen, line }: VariationBoardProps) {
         <Chessboard
           options={{
             position: fen,
-            arrows,
+            arrows: visibleArrows,
             darkSquareStyle: { backgroundColor: '#4a6741' },
             lightSquareStyle: { backgroundColor: '#e8dcc8' },
             animationDurationInMs: 0,
