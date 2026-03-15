@@ -1,24 +1,9 @@
-import type { PositionFeel, EngineEvaluation } from '../../types';
+import type { EngineEvaluation } from '../../types';
 import styles from './PositionMeter.module.css';
 
 interface PositionMeterProps {
-  feel: PositionFeel | null;
   engineEval: EngineEvaluation | null;
 }
-
-const FEEL_CONFIG: Record<PositionFeel, { label: string; className: string }> = {
-  'equal': { label: 'Equal', className: 'equal' },
-  'roughly equal': { label: 'Roughly Equal', className: 'equal' },
-  'slight edge white': { label: 'White has a slight edge', className: 'slightWhite' },
-  'slight edge black': { label: 'Black has a slight edge', className: 'slightBlack' },
-  'clear advantage white': { label: 'White has a clear advantage', className: 'clearWhite' },
-  'clear advantage black': { label: 'Black has a clear advantage', className: 'clearBlack' },
-  'white is winning': { label: 'White is winning', className: 'winningWhite' },
-  'black is winning': { label: 'Black is winning', className: 'winningBlack' },
-  'unclear — double-edged': { label: 'Sharp — anything can happen!', className: 'unclear' },
-  'white has compensation': { label: 'White has compensation for the material', className: 'compWhite' },
-  'black has compensation': { label: 'Black has compensation for the material', className: 'compBlack' },
-};
 
 /** Format eval for display: "+1.2", "-0.5", "M3", "M-3" */
 function formatEval(ev: EngineEvaluation): string {
@@ -41,13 +26,30 @@ function evalToWhitePercent(ev: EngineEvaluation): number {
   return Math.max(3, Math.min(97, pct));
 }
 
-export default function PositionMeter({ feel, engineEval }: PositionMeterProps) {
+/** Derive a human-readable position description from engine eval */
+function evalToFeelLabel(ev: EngineEvaluation): string {
+  if (ev.mate !== null) {
+    return ev.mate > 0 ? 'White has a forced mate' : 'Black has a forced mate';
+  }
+  const cp = ev.cp ?? 0;
+  const abs = Math.abs(cp);
+  const side = cp > 0 ? 'White' : 'Black';
+
+  if (abs <= 15) return 'Equal';
+  if (abs <= 50) return `${side} has a slight edge`;
+  if (abs <= 150) return `${side} has a clear advantage`;
+  if (abs <= 300) return `${side} has a commanding advantage`;
+  return `${side} is winning`;
+}
+
+export default function PositionMeter({ engineEval }: PositionMeterProps) {
   // If we have engine eval, show the eval bar
   if (engineEval) {
     const whitePct = evalToWhitePercent(engineEval);
     const evalStr = formatEval(engineEval);
     const isWhiteAdvantage = (engineEval.cp !== null && engineEval.cp > 0) ||
       (engineEval.mate !== null && engineEval.mate > 0);
+    const feelLabel = evalToFeelLabel(engineEval);
 
     return (
       <div className={styles.evalContainer}>
@@ -65,26 +67,16 @@ export default function PositionMeter({ feel, engineEval }: PositionMeterProps) 
           <span className={`${styles.evalScore} ${isWhiteAdvantage ? styles.evalWhite : styles.evalBlack}`}>
             {evalStr}
           </span>
-          {feel && <span className={styles.feelLabel}>{FEEL_CONFIG[feel].label}</span>}
+          <span className={styles.feelLabel}>{feelLabel}</span>
         </div>
       </div>
     );
   }
 
-  // Fallback: qualitative meter only
-  if (!feel) {
-    return (
-      <div className={`${styles.meter} ${styles.equal}`}>
-        <span className={styles.label}>Starting Position</span>
-      </div>
-    );
-  }
-
-  const config = FEEL_CONFIG[feel];
-
+  // Fallback: no eval yet
   return (
-    <div className={`${styles.meter} ${styles[config.className]}`}>
-      <span className={styles.label}>{config.label}</span>
+    <div className={`${styles.meter} ${styles.equal}`}>
+      <span className={styles.label}>Starting Position</span>
     </div>
   );
 }

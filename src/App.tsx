@@ -211,7 +211,6 @@ function App() {
             />
             <div className="boardInfo">
               <PositionMeter
-                feel={currentMove?.positionFeel || null}
                 engineEval={currentMove?.engineEval || null}
               />
               <div className="moveLabel">
