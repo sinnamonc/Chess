@@ -7,9 +7,13 @@ interface BoardProps {
   fen: string;
   arrows: Arrow[];
   highlights: Square[];
+  /** Extra arrows from strategic idea overlay */
+  overlayArrows?: { from: Square; to: Square }[];
+  /** Extra square highlights from strategic idea overlay */
+  overlaySquares?: Square[];
 }
 
-export default function Board({ fen, arrows, highlights }: BoardProps) {
+export default function Board({ fen, arrows, highlights, overlayArrows, overlaySquares }: BoardProps) {
   // Convert arrows to react-chessboard format
   const boardArrows = arrows.map((a) => ({
     startSquare: a.from,
@@ -17,10 +21,27 @@ export default function Board({ fen, arrows, highlights }: BoardProps) {
     color: ARROW_COLORS[a.color] || ARROW_COLORS.green,
   }));
 
+  // Add overlay arrows (strategic ideas) in purple
+  if (overlayArrows) {
+    for (const a of overlayArrows) {
+      boardArrows.push({
+        startSquare: a.from,
+        endSquare: a.to,
+        color: 'rgba(168, 85, 247, 0.75)',
+      });
+    }
+  }
+
   // Build custom square styles for highlights
   const squareStyles: Record<string, React.CSSProperties> = {};
   for (const sq of highlights) {
     squareStyles[sq] = { backgroundColor: 'rgba(255, 255, 0, 0.3)' };
+  }
+  // Add overlay square highlights in purple
+  if (overlaySquares) {
+    for (const sq of overlaySquares) {
+      squareStyles[sq] = { backgroundColor: 'rgba(168, 85, 247, 0.3)' };
+    }
   }
 
   return (

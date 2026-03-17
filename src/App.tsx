@@ -5,11 +5,14 @@ import { analyzeGame } from './engine/analyzer';
 import { evaluateMoveProgressive, prefetchMoves } from './engine/stockfishAnalyzer';
 import { getStockfishPool } from './engine/stockfishPool';
 import { identifyOpening } from './utils/openings';
+import { analyzePosition } from './engine/analyzer';
+import { detectStrategicIdeas, type StrategicIdea } from './engine/strategicPlans';
 import Board from './components/Board/Board';
 import PgnInput from './components/PgnInput/PgnInput';
 import PositionMeter from './components/PositionMeter/PositionMeter';
 import NavigationBar from './components/NavigationBar/NavigationBar';
 import EngineLines from './components/EngineLines/EngineLines';
+import StrategicIdeas from './components/StrategicIdeas/StrategicIdeas';
 import './App.css';
 
 function App() {
@@ -147,6 +150,22 @@ function App() {
     return identifyOpening(sanMoves);
   }, [game, moveIndex]);
 
+  // Strategic ideas for the current position
+  const strategicIdeas = useMemo(() => {
+    if (!game || moveIndex < 0) return [];
+    const move = game.moves[moveIndex];
+    if (!move) return [];
+    const posAnalysis = analyzePosition(move.fen);
+    return detectStrategicIdeas(move.fen, posAnalysis, move.engineLines);
+  }, [game, moveIndex, engineDepth]); // re-run when engine lines arrive
+
+  const [highlightedIdea, setHighlightedIdea] = useState<StrategicIdea | null>(null);
+
+  // Clear idea highlight when navigating
+  useEffect(() => {
+    setHighlightedIdea(null);
+  }, [moveIndex]);
+
   if (!game) {
     return (
       <PgnInput onSubmit={handlePgnSubmit} error={error} isLoading={isLoading} />
@@ -208,6 +227,8 @@ function App() {
               fen={currentFen}
               arrows={currentMove?.arrows || []}
               highlights={currentMove?.highlights || []}
+              overlayArrows={highlightedIdea?.arrows}
+              overlaySquares={highlightedIdea?.squares}
             />
             <div className="boardInfo">
               <PositionMeter
@@ -229,6 +250,12 @@ function App() {
                 onNext={handleNext}
                 onLast={handleLast}
               />
+              {strategicIdeas.length > 0 && (
+                <StrategicIdeas
+                  ideas={strategicIdeas}
+                  onHighlight={setHighlightedIdea}
+                />
+              )}
             </div>
           </div>
         </div>
